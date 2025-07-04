@@ -15,6 +15,20 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
+    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Sair\nEscolha: "
+    str_escolha: .asciz "%d"
+    str_nome_prompt: .asciz "Digite o nome do produto: "
+    str_lote_prompt: .asciz "Digite o lote: "
+    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Lmipeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hostifuti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo"
+    str_data_prompt: .asciz "Digite a data (DD/MM/AAAA): "
+    str_fornec_prompt: .asciz "Digite o fornecedor: "
+    str_quant_prompt: .asciz "Digite a quantidade: "
+    str_compra_prompt: .asciz "Digite o valor de compra (centavos): "
+    str_venda_prompt: .asciz "Digite o valor de venda (centavos): "
+    str_busca_prompt: .asciz "Digite o nome para buscar: "
+    str_invalido: .asciz "Opção inválida!\n"
+    str_saindo: .asciz "Saindo...\n"
+    str_malloc_fail: .asciz "Falha ao alocar memoria!\n"
     
     # Tipos de produtos
     tipos:
@@ -26,7 +40,7 @@
         .asciz "Padaria"
         .asciz "Carnes"
         .asciz "Higiene"
-        .asciz "Bebes"
+        .asciz "Bebês"
         .asciz "Pet"
         .asciz "Congelados"
         .asciz "Hortifruti"
@@ -34,21 +48,18 @@
         .asciz "Vestuario"
         .asciz "Outros"
 
-    nome_buscado: .asciz "Crroz"   # Nome para busca
-    exemplo_nome: .asciz "Prrroz"
-    exemplo_lote: .asciz "xyz"
-    exemplo_data: .asciz "31/12/2025"
-    exemplo_fornec: .asciz "Fornecedor Exemplo"
-
-# Tamanho fixo da estrutura (sem variável global)
+# Tamanho fixo da estrutura
 .set produto_size, 151
 
 .section .bss
     .lcomm buffer, 147
+    .lcomm input_buffer, 50
+    .lcomm escolha, 4
+    .lcomm nome_busca, 50
 
 .section .text
     .globl main
-    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy
+    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar
 
 insert_sorted:
     pushl %ebp
@@ -186,9 +197,11 @@ load_loop:
     cmpl $147, %eax
     jne close_load
     
-    pushl $151                # Tamanho fixo (sem variável)
+    pushl $151
     call malloc
     addl $4, %esp
+    testl %eax, %eax
+    jz close_load  # Se malloc falhar, sair
     
     movl $0, (%eax)
     leal 4(%eax), %edi
@@ -323,64 +336,287 @@ search_done:
     leave
     ret
 
-add_product:
+# Função para ler inteiro do usuário
+# Saída: EAX = valor lido
+read_int:
+    pushl %ebp
+    movl %esp, %ebp
+    subl $8, %esp
+    
+    leal -4(%ebp), %eax
+    
+    # Ler inteiro
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    
+    # Limpar buffer de entrada
+    call clear_input_buffer
+    
+    movl -4(%ebp), %eax
+    leave
+    ret
+
+# Limpar buffer de entrada
+clear_input_buffer:
+    pushl %ebp
+    movl %esp, %ebp
+    
+clear_loop:
+    call getchar
+    cmpl $10, %eax  # '\n'
+    je clear_done
+    cmpl $-1, %eax  # EOF
+    jne clear_loop
+    
+clear_done:
+    leave
+    ret
+
+# Função auxiliar para ler string com prompt usando fgets
+# Parâmetros: [ebp+8] = endereço do prompt, [ebp+12] = endereço do buffer
+read_string_with_prompt:
     pushl %ebp
     movl %esp, %ebp
     pushl %ebx
     
-    pushl $151                # Tamanho fixo
-    call malloc
+    # Exibir prompt
+    movl 8(%ebp), %eax
+    pushl %eax
+    call printf
     addl $4, %esp
-    movl %eax, %ebx
     
-    movl $0, (%ebx)           # prox = NULL
-    movl $1, 4(%ebx)          # tipo
-    movl $100, 8(%ebx)        # quantidade
-    movl $5000, 12(%ebx)      # compra (50.00)
-    movl $7500, 16(%ebx)      # venda (75.00)
-    
-    # Copiar nome
-    leal 20(%ebx), %eax
-    pushl $exemplo_nome
-    pushl %eax
-    call strcpy
-    addl $8, %esp
-    
-    # Copiar lote
-    leal 70(%ebx), %eax
-    pushl $exemplo_lote
-    pushl %eax
-    call strcpy
-    addl $8, %esp
-    
-    # Copiar data
-    leal 74(%ebx), %eax
-    pushl $exemplo_data
-    pushl %eax
-    call strcpy
-    addl $8, %esp
-    
-    # Copiar fornecedor
-    leal 85(%ebx), %eax
-    pushl $exemplo_fornec
-    pushl %eax
-    call strcpy
-    addl $8, %esp
-    
+    # Ler string com fgets
+    movl 12(%ebp), %ebx   # Endereço do buffer
+    pushl stdin           # stdin
+    pushl $50             # Tamanho máximo
     pushl %ebx
-    call insert_sorted
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha se existir
+    pushl %ebx
+    call remove_newline
     addl $4, %esp
     
     popl %ebx
     leave
     ret
 
+# Remover caractere de nova linha do final da string
+# Entrada: EAX = endereço da string
+remove_newline:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %edi
+    
+    movl 8(%ebp), %edi
+    
+rn_loop:
+    movb (%edi), %al
+    testb %al, %al
+    jz rn_end
+    cmpb $10, %al         # '\n'
+    je rn_found
+    incl %edi
+    jmp rn_loop
+
+rn_found:
+    movb $0, (%edi)       # Substituir por terminador nulo
+    
+rn_end:
+    popl %edi
+    leave
+    ret
+
+# Adicionar produto interativamente
+add_product_interactive:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    
+    # Alocar memória para o produto
+    pushl $151
+    call malloc
+    addl $4, %esp
+    testl %eax, %eax
+    jz add_product_fail
+    movl %eax, %ebx
+    
+    # Inicializar ponteiro next
+    movl $0, (%ebx)
+    
+    # Ler nome
+    leal 20(%ebx), %eax   # Campo nome
+    pushl %eax
+    pushl $str_nome_prompt
+    call read_string_with_prompt
+    addl $8, %esp
+    
+    # Ler lote
+    leal 70(%ebx), %eax   # Campo lote
+    pushl %eax
+    pushl $str_lote_prompt
+    call read_string_with_prompt
+    addl $8, %esp
+    
+    # Ler tipo
+    pushl $str_tipo_prompt
+    call printf
+    addl $4, %esp
+    leal 4(%ebx), %eax    # Campo tipo
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Ler data
+    leal 74(%ebx), %eax   # Campo data
+    pushl %eax
+    pushl $str_data_prompt
+    call read_string_with_prompt
+    addl $8, %esp
+    
+    # Ler fornecedor
+    leal 85(%ebx), %eax   # Campo fornecedor
+    pushl %eax
+    pushl $str_fornec_prompt
+    call read_string_with_prompt
+    addl $8, %esp
+    
+    # Ler quantidade
+    pushl $str_quant_prompt
+    call printf
+    addl $4, %esp
+    leal 8(%ebx), %eax    # Campo quantidade
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Ler valor de compra
+    pushl $str_compra_prompt
+    call printf
+    addl $4, %esp
+    leal 12(%ebx), %eax   # Campo compra
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Ler valor de venda
+    pushl $str_venda_prompt
+    call printf
+    addl $4, %esp
+    leal 16(%ebx), %eax   # Campo venda
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Inserir na lista
+    pushl %ebx
+    call insert_sorted
+    addl $4, %esp
+    jmp add_product_done
+
+add_product_fail:
+    # Imprimir mensagem de falha
+    pushl $str_malloc_fail
+    call printf
+    addl $4, %esp
+
+add_product_done:
+    popl %ebx
+    leave
+    ret
+
+# Buscar produto interativamente
+search_product_interactive:
+    pushl %ebp
+    movl %esp, %ebp
+    subl $52, %esp        # Alocar espaço para o buffer
+    
+    # Exibir prompt
+    pushl $str_busca_prompt
+    call printf
+    addl $4, %esp
+    
+    # Ler nome para busca com fgets
+    leal -50(%ebp), %eax  # Buffer local
+    pushl stdin           # stdin
+    pushl $50             # Tamanho máximo
+    pushl %eax
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha
+    leal -50(%ebp), %eax
+    pushl %eax
+    call remove_newline
+    addl $4, %esp
+    
+    # Buscar produto
+    leal -50(%ebp), %eax
+    pushl %eax
+    call search_product
+    addl $4, %esp
+    
+    leave
+    ret
+
+# Exibir menu e obter escolha
+display_menu:
+    pushl %ebp
+    movl %esp, %ebp
+    
+    # Exibir menu
+    pushl $menu
+    call printf
+    addl $4, %esp
+    
+    # Ler escolha
+    call read_int
+    
+    leave
+    ret
+
 main:
     call load_list
-    call add_product
+
+menu_loop:
+    call display_menu
     
-    pushl $nome_buscado
-    call search_product
+    # Verificar opção
+    cmpl $1, %eax
+    je opcao1
+    cmpl $2, %eax
+    je opcao2
+    cmpl $3, %eax
+    je opcao3
+    
+    # Opção inválida
+    pushl $str_invalido
+    call printf
+    addl $4, %esp
+    jmp menu_loop
+
+opcao1:
+    call add_product_interactive
+    jmp menu_loop
+
+opcao2:
+    call search_product_interactive
+    jmp menu_loop
+
+opcao3:
+    pushl $str_saindo
+    call printf
     addl $4, %esp
     
     call save_list
@@ -389,7 +625,7 @@ main:
     xorl %ebx, %ebx
     int $0x80
 
-# Implementação simplificada de memcpy
+# Implementação de memcpy
 memcpy:
     pushl %ebp
     movl %esp, %ebp
