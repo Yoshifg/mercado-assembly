@@ -9,7 +9,7 @@
     fmt_nome: .asciz "Nome: %s\n"
     fmt_lote: .asciz "Lote: %s\n"
     fmt_tipo: .asciz "Tipo: %d\n"
-    fmt_data: .asciz "Validade: %s\n"
+    fmt_data: .asciz "Validade: %02d/%02d/%04d\n"  # Formato DD/MM/AAAA
     fmt_fornec: .asciz "Fornecedor: %s\n"
     fmt_quant: .asciz "Quantidade: %d\n"
     fmt_compra: .asciz "Compra: %d.%02d\n"
@@ -19,8 +19,10 @@
     str_escolha: .asciz "%d"
     str_nome_prompt: .asciz "Digite o nome do produto: "
     str_lote_prompt: .asciz "Digite o lote: "
-    str_tipo_prompt: .asciz "Digite o tipo (1-15): "
-    str_data_prompt: .asciz "Digite a data (DD/MM/AAAA): "
+    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Lmipeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hostifuti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
+    str_dia_prompt: .asciz "Digite o dia da validade: "
+    str_mes_prompt: .asciz "Digite o mês da validade: "
+    str_ano_prompt: .asciz "Digite o ano da validade: "
     str_fornec_prompt: .asciz "Digite o fornecedor: "
     str_quant_prompt: .asciz "Digite a quantidade: "
     str_compra_prompt: .asciz "Digite o valor de compra (centavos): "
@@ -60,11 +62,13 @@
         .asciz "Vestuario"
         .asciz "Outros"
 
-# Tamanho fixo da estrutura
-.set produto_size, 151
+# Tamanho fixo da estrutura (recalculado)
+# [prox:4][tipo:4][quant:4][compra:4][venda:4][nome:50][lote:20][dia:4][mes:4][ano:4][fornec:50] = 4*8 + 50 + 20 + 50 = 32 + 120 = 152 bytes
+.set produto_size, 152
+.set dados_size, 148   # produto_size - 4 (ponteiro)
 
 .section .bss
-    .lcomm buffer, 147
+    .lcomm buffer, 148   # Ajustado para dados_size
     .lcomm input_buffer, 50
     .lcomm escolha, 4
     .lcomm nome_busca, 50
@@ -156,15 +160,15 @@ save_loop:
     testl %esi, %esi
     jz close_save
     
-    leal 4(%esi), %eax
-    pushl $147
+    leal 4(%esi), %eax        # Dados (excluindo ponteiro)
+    pushl $dados_size         # Novo tamanho dos dados
     pushl %eax
     pushl $buffer
     call memcpy
     addl $12, %esp
     
     pushl %ebx
-    pushl $147
+    pushl $dados_size
     pushl $1
     pushl $buffer
     call fwrite
@@ -201,25 +205,25 @@ load_list:
     
 load_loop:
     pushl %ebx
-    pushl $147
+    pushl $dados_size
     pushl $1
     pushl $buffer
     call fread
     addl $16, %esp
     
-    cmpl $147, %eax
+    cmpl $dados_size, %eax
     jne close_load
     
-    pushl $151
+    pushl $produto_size
     call malloc
     addl $4, %esp
     testl %eax, %eax
     jz close_load
     
-    movl $0, (%eax)
-    leal 4(%eax), %edi
+    movl $0, (%eax)           # Inicializar ponteiro next
+    leal 4(%eax), %edi        # Área de dados
     
-    pushl $147
+    pushl $dados_size
     pushl $buffer
     pushl %edi
     call memcpy
@@ -249,42 +253,53 @@ print_product:
     
     movl 8(%ebp), %ebx
     
+    # Imprimir nome (offset 20)
     leal 20(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
     call printf
     addl $8, %esp
     
+    # Imprimir lote (offset 70)
     leal 70(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
     call printf
     addl $8, %esp
     
+    # Imprimir tipo (offset 4)
     movl 4(%ebx), %eax
     pushl %eax
     pushl $fmt_tipo
     call printf
     addl $8, %esp
     
-    leal 74(%ebx), %eax
+    # Imprimir data (offsets 90, 94, 98)
+    movl 98(%ebx), %eax    # Ano
+    movl 94(%ebx), %ecx    # Mês
+    movl 90(%ebx), %edx    # Dia
     pushl %eax
+    pushl %ecx
+    pushl %edx
     pushl $fmt_data
     call printf
-    addl $8, %esp
+    addl $16, %esp
     
-    leal 85(%ebx), %eax
+    # Imprimir fornecedor (offset 102)
+    leal 102(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
     call printf
     addl $8, %esp
     
+    # Imprimir quantidade (offset 8)
     movl 8(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
     call printf
     addl $8, %esp
     
+    # Imprimir valor compra (offset 12)
     movl 12(%ebx), %eax
     xorl %edx, %edx
     movl $100, %ecx
@@ -295,6 +310,7 @@ print_product:
     call printf
     addl $12, %esp
     
+    # Imprimir valor venda (offset 16)
     movl 16(%ebx), %eax
     xorl %edx, %edx
     movl $100, %ecx
@@ -450,7 +466,7 @@ add_product_interactive:
     pushl %ebx
     
     # Alocar memória para o produto
-    pushl $151
+    pushl $produto_size
     call malloc
     addl $4, %esp
     testl %eax, %eax
@@ -460,72 +476,98 @@ add_product_interactive:
     # Inicializar ponteiro next
     movl $0, (%ebx)
     
-    # Ler nome
-    leal 20(%ebx), %eax   # Campo nome
+    # Ler nome (offset 20)
+    leal 20(%ebx), %eax
     pushl %eax
     pushl $str_nome_prompt
     call read_string_with_prompt
     addl $8, %esp
     
-    # Ler lote
-    leal 70(%ebx), %eax   # Campo lote
+    # Ler lote (offset 70)
+    leal 70(%ebx), %eax
     pushl %eax
     pushl $str_lote_prompt
     call read_string_with_prompt
     addl $8, %esp
     
-    # Ler tipo
+    # Ler tipo (offset 4)
     pushl $str_tipo_prompt
     call printf
     addl $4, %esp
-    leal 4(%ebx), %eax    # Campo tipo
+    leal 4(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call scanf
     addl $8, %esp
     call clear_input_buffer
     
-    # Ler data
-    leal 74(%ebx), %eax   # Campo data
+    # Ler dia (offset 90)
+    pushl $str_dia_prompt
+    call printf
+    addl $4, %esp
+    leal 90(%ebx), %eax
     pushl %eax
-    pushl $str_data_prompt
-    call read_string_with_prompt
+    pushl $str_escolha
+    call scanf
     addl $8, %esp
+    call clear_input_buffer
     
-    # Ler fornecedor
-    leal 85(%ebx), %eax   # Campo fornecedor
+    # Ler mês (offset 94)
+    pushl $str_mes_prompt
+    call printf
+    addl $4, %esp
+    leal 94(%ebx), %eax
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Ler ano (offset 98)
+    pushl $str_ano_prompt
+    call printf
+    addl $4, %esp
+    leal 98(%ebx), %eax
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    
+    # Ler fornecedor (offset 102)
+    leal 102(%ebx), %eax
     pushl %eax
     pushl $str_fornec_prompt
     call read_string_with_prompt
     addl $8, %esp
     
-    # Ler quantidade
+    # Ler quantidade (offset 8)
     pushl $str_quant_prompt
     call printf
     addl $4, %esp
-    leal 8(%ebx), %eax    # Campo quantidade
+    leal 8(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call scanf
     addl $8, %esp
     call clear_input_buffer
     
-    # Ler valor de compra
+    # Ler valor de compra (offset 12)
     pushl $str_compra_prompt
     call printf
     addl $4, %esp
-    leal 12(%ebx), %eax   # Campo compra
+    leal 12(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call scanf
     addl $8, %esp
     call clear_input_buffer
     
-    # Ler valor de venda
+    # Ler valor de venda (offset 16)
     pushl $str_venda_prompt
     call printf
     addl $4, %esp
-    leal 16(%ebx), %eax   # Campo venda
+    leal 16(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call scanf
@@ -611,7 +653,7 @@ remove_product_interactive:
     call printf
     addl $4, %esp
     
-    leal -70(%ebp), %eax  # Buffer para lote (70-50=20 bytes)
+    leal -70(%ebp), %eax  # Buffer para lote
     pushl stdin
     pushl $20
     pushl %eax
@@ -632,9 +674,9 @@ remove_search_loop:
     testl %ebx, %ebx
     jz remove_not_found
     
-    # Comparar nome
-    leal 20(%ebx), %eax   # Nome do produto atual
-    leal -50(%ebp), %ecx  # Nome buscado
+    # Comparar nome (offset 20)
+    leal 20(%ebx), %eax
+    leal -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
     call strcmp
@@ -642,10 +684,10 @@ remove_search_loop:
     testl %eax, %eax
     jnz next_remove_search
     
-    # Comparar lote
-    leal 70(%ebx), %eax   # Lote do produto atual
-    leal -70(%ebp), %ecx  # Lote buscado
-    pushl $20             # Tamanho máximo para comparação
+    # Comparar lote (offset 70)
+    leal 70(%ebx), %eax
+    leal -70(%ebp), %ecx
+    pushl $20
     pushl %ecx
     pushl %eax
     call strncmp
@@ -654,23 +696,21 @@ remove_search_loop:
     jz found_to_remove
     
 next_remove_search:
-    movl %ebx, %esi       # anterior = atual
-    movl (%ebx), %ebx     # atual = atual->prox
+    movl %ebx, %esi
+    movl (%ebx), %ebx
     jmp remove_search_loop
 
 found_to_remove:
-    # Encontramos o produto para remover
     testl %esi, %esi
-    jz remove_first       # Se for o primeiro nó
+    jz remove_first
     
-    # Remover do meio ou fim
-    movl (%ebx), %eax     # EAX = próximo nó
-    movl %eax, (%esi)     # anterior->prox = próximo
+    movl (%ebx), %eax
+    movl %eax, (%esi)
     jmp free_node
 
 remove_first:
-    movl (%ebx), %eax     # EAX = próximo nó
-    movl %eax, head       # head = próximo
+    movl (%ebx), %eax
+    movl %eax, head
 
 free_node:
     pushl %ebx
@@ -720,7 +760,7 @@ update_product_interactive:
     call printf
     addl $4, %esp
     
-    leal -70(%ebp), %eax  # Buffer para lote (70-50=20 bytes)
+    leal -70(%ebp), %eax  # Buffer para lote
     pushl stdin
     pushl $20
     pushl %eax
@@ -734,15 +774,15 @@ update_product_interactive:
     addl $4, %esp
     
     # Procurar produto para atualizar
-    movl head, %ebx       # EBX = atual
+    movl head, %ebx
     
 update_search_loop:
     testl %ebx, %ebx
     jz update_not_found
     
-    # Comparar nome
-    leal 20(%ebx), %eax   # Nome do produto atual
-    leal -50(%ebp), %ecx  # Nome buscado
+    # Comparar nome (offset 20)
+    leal 20(%ebx), %eax
+    leal -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
     call strcmp
@@ -750,10 +790,10 @@ update_search_loop:
     testl %eax, %eax
     jnz next_update_search
     
-    # Comparar lote
-    leal 70(%ebx), %eax   # Lote do produto atual
-    leal -70(%ebp), %ecx  # Lote buscado
-    pushl $20             # Tamanho máximo para comparação
+    # Comparar lote (offset 70)
+    leal 70(%ebx), %eax
+    leal -70(%ebp), %ecx
+    pushl $20
     pushl %ecx
     pushl %eax
     call strncmp
@@ -762,24 +802,21 @@ update_search_loop:
     jz found_to_update
     
 next_update_search:
-    movl (%ebx), %ebx     # atual = atual->prox
+    movl (%ebx), %ebx
     jmp update_search_loop
 
 found_to_update:
-    # Encontramos o produto para atualizar
-    # Mostrar opções de campo para atualizar
     pushl $str_update_campo
     call printf
     addl $4, %esp
     
-    call read_int          # Ler escolha do campo
+    call read_int
     
     cmpl $1, %eax
     je update_quantidade
     cmpl $2, %eax
     je update_venda
     
-    # Opção inválida
     pushl $str_update_campo_invalido
     call printf
     addl $4, %esp
@@ -790,7 +827,7 @@ update_quantidade:
     call printf
     addl $4, %esp
     
-    leal 8(%ebx), %eax    # Campo quantidade
+    leal 8(%ebx), %eax    # Campo quantidade (offset 8)
     pushl %eax
     pushl $str_escolha
     call scanf
@@ -803,7 +840,7 @@ update_venda:
     call printf
     addl $4, %esp
     
-    leal 16(%ebx), %eax   # Campo venda
+    leal 16(%ebx), %eax   # Campo venda (offset 16)
     pushl %eax
     pushl $str_escolha
     call scanf
@@ -814,7 +851,6 @@ update_success:
     pushl $str_update_success
     call printf
     addl $4, %esp
-    jmp update_done
 
 update_not_found:
     pushl $str_update_fail
@@ -830,12 +866,10 @@ display_menu:
     pushl %ebp
     movl %esp, %ebp
     
-    # Exibir menu
     pushl $menu
     call printf
     addl $4, %esp
     
-    # Ler escolha
     call read_int
     
     leave
@@ -847,7 +881,6 @@ main:
 menu_loop:
     call display_menu
     
-    # Verificar opção
     cmpl $1, %eax
     je opcao1
     cmpl $2, %eax
@@ -859,7 +892,6 @@ menu_loop:
     cmpl $5, %eax
     je opcao5
     
-    # Opção inválida
     pushl $str_invalido
     call printf
     addl $4, %esp
