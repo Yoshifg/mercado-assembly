@@ -818,33 +818,27 @@ lucro_total:
     leave
     ret
 
-# Função para comparar datas corrigida
-# Entrada: (dia_prod, mes_prod, ano_prod), (dia_atual, mes_atual, ano_atual)
-# Saída: EAX = -1 se data_prod < data_atual (vencido), 0 se igual, 1 se maior
 compare_dates:
     pushl %ebp
     movl %esp, %ebp
     
-    # Comparar ano primeiro
-    movl 24(%ebp), %eax     # ano_prod
-    cmpl 28(%ebp), %eax     # Compara com ano_atual
+    # Correção dos offsets (valores corretos):
+    movl 16(%ebp), %eax     # ano_prod (correto)
+    cmpl 28(%ebp), %eax     # Compara com ano_atual (correto)
     jl date_less
     jg date_greater
     
-    # Anos iguais, comparar mês
-    movl 20(%ebp), %eax     # mes_prod
-    cmpl 24(%ebp), %eax     # Compara com mes_atual
+    movl 12(%ebp), %eax     # mes_prod (correto)
+    cmpl 24(%ebp), %eax     # Compara com mes_atual (correto)
     jl date_less
     jg date_greater
     
-    # Meses iguais, comparar dia
-    movl 8(%ebp), %eax      # dia_prod
-    cmpl 12(%ebp), %eax     # Compara com dia_atual
+    movl 8(%ebp), %eax      # dia_prod (correto)
+    cmpl 20(%ebp), %eax     # Compara com dia_atual (correto)
     jl date_less
     jg date_greater
     
-    # Datas iguais
-    xorl %eax, %eax
+    xorl %eax, %eax        # Datas iguais
     jmp date_done
 
 date_less:
@@ -857,7 +851,7 @@ date_greater:
 date_done:
     leave
     ret
-
+    
 # Função capital_perdido corrigida
 capital_perdido:
     pushl %ebp
