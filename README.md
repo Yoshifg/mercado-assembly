@@ -23,19 +23,42 @@ Cada produto possui os seguintes campos:
 - Data de validade (11 bytes)
 - Fornecedor (11 bytes)
 
+## Dependências
+
+Para compilar com `-m32`, é necessário ter o GCC com suporte a 32 bits instalado.  
+No Ubuntu/Debian, instale com:
+
+```sh
+sudo apt-get install gcc-multilib libc6-dev-i386
+```
+
 ## Como compilar e executar
 
-Compile usando o GCC (32 bits, sem PIE):
+Você pode compilar e executar o programa de duas formas:
+
+### Usando o GCC diretamente
 
 ```sh
 gcc -m32 -no-pie -o supermercado supermercado.s
-```
-
-Execute o programa:
-
-```sh
 ./supermercado
 ```
+
+### Usando o Makefile
+
+O projeto inclui um Makefile para facilitar a compilação e execução:
+
+- Para compilar:  
+  ```sh
+  make
+  ```
+- Para rodar o programa:  
+  ```sh
+  make run
+  ```
+- Para limpar arquivos gerados (`supermercado` e `produtos.bin`):  
+  ```sh
+  make clean
+  ```
 
 ## Observações
 
