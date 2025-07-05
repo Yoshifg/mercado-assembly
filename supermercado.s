@@ -15,11 +15,11 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
-    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Sair\nEscolha: "
+    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Sair\nEscolha: "
     str_escolha: .asciz "%d"
     str_nome_prompt: .asciz "Digite o nome do produto: "
     str_lote_prompt: .asciz "Digite o lote: "
-    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Lmipeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hostifuti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
+    str_tipo_prompt: .asciz "Digite o tipo (1-15): "
     str_data_prompt: .asciz "Digite a data (DD/MM/AAAA): "
     str_fornec_prompt: .asciz "Digite o fornecedor: "
     str_quant_prompt: .asciz "Digite a quantidade: "
@@ -28,11 +28,19 @@
     str_busca_prompt: .asciz "Digite o nome para buscar: "
     str_remove_prompt: .asciz "Digite o nome do produto a remover: "
     str_remove_lote_prompt: .asciz "Digite o lote do produto a remover: "
+    str_update_prompt: .asciz "Digite o nome do produto a atualizar: "
+    str_update_lote_prompt: .asciz "Digite o lote do produto a atualizar: "
+    str_update_campo: .asciz "Qual campo deseja atualizar?\n1. Quantidade\n2. Valor de venda\nEscolha: "
+    str_nova_quant: .asciz "Digite a nova quantidade: "
+    str_nova_venda: .asciz "Digite o novo valor de venda (centavos): "
     str_invalido: .asciz "Opção inválida!\n"
     str_saindo: .asciz "Saindo...\n"
     str_malloc_fail: .asciz "Falha ao alocar memoria!\n"
     str_remove_success: .asciz "Produto removido com sucesso!\n"
     str_remove_fail: .asciz "Produto não encontrado para remoção!\n"
+    str_update_success: .asciz "Produto atualizado com sucesso!\n"
+    str_update_fail: .asciz "Produto não encontrado para atualização!\n"
+    str_update_campo_invalido: .asciz "Campo inválido!\n"
     
     # Tipos de produtos
     tipos:
@@ -683,6 +691,140 @@ remove_done:
     leave
     ret
 
+# Atualizar produto interativamente
+update_product_interactive:
+    pushl %ebp
+    movl %esp, %ebp
+    subl $72, %esp        # Alocar espaço para buffers
+    
+    # Ler nome do produto
+    pushl $str_update_prompt
+    call printf
+    addl $4, %esp
+    
+    leal -50(%ebp), %eax  # Buffer para nome
+    pushl stdin
+    pushl $50
+    pushl %eax
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha
+    leal -50(%ebp), %eax
+    pushl %eax
+    call remove_newline
+    addl $4, %esp
+    
+    # Ler lote do produto
+    pushl $str_update_lote_prompt
+    call printf
+    addl $4, %esp
+    
+    leal -70(%ebp), %eax  # Buffer para lote (70-50=20 bytes)
+    pushl stdin
+    pushl $20
+    pushl %eax
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha
+    leal -70(%ebp), %eax
+    pushl %eax
+    call remove_newline
+    addl $4, %esp
+    
+    # Procurar produto para atualizar
+    movl head, %ebx       # EBX = atual
+    
+update_search_loop:
+    testl %ebx, %ebx
+    jz update_not_found
+    
+    # Comparar nome
+    leal 20(%ebx), %eax   # Nome do produto atual
+    leal -50(%ebp), %ecx  # Nome buscado
+    pushl %ecx
+    pushl %eax
+    call strcmp
+    addl $8, %esp
+    testl %eax, %eax
+    jnz next_update_search
+    
+    # Comparar lote
+    leal 70(%ebx), %eax   # Lote do produto atual
+    leal -70(%ebp), %ecx  # Lote buscado
+    pushl $20             # Tamanho máximo para comparação
+    pushl %ecx
+    pushl %eax
+    call strncmp
+    addl $12, %esp
+    testl %eax, %eax
+    jz found_to_update
+    
+next_update_search:
+    movl (%ebx), %ebx     # atual = atual->prox
+    jmp update_search_loop
+
+found_to_update:
+    # Encontramos o produto para atualizar
+    # Mostrar opções de campo para atualizar
+    pushl $str_update_campo
+    call printf
+    addl $4, %esp
+    
+    call read_int          # Ler escolha do campo
+    
+    cmpl $1, %eax
+    je update_quantidade
+    cmpl $2, %eax
+    je update_venda
+    
+    # Opção inválida
+    pushl $str_update_campo_invalido
+    call printf
+    addl $4, %esp
+    jmp update_done
+
+update_quantidade:
+    pushl $str_nova_quant
+    call printf
+    addl $4, %esp
+    
+    leal 8(%ebx), %eax    # Campo quantidade
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+    jmp update_success
+
+update_venda:
+    pushl $str_nova_venda
+    call printf
+    addl $4, %esp
+    
+    leal 16(%ebx), %eax   # Campo venda
+    pushl %eax
+    pushl $str_escolha
+    call scanf
+    addl $8, %esp
+    call clear_input_buffer
+
+update_success:
+    pushl $str_update_success
+    call printf
+    addl $4, %esp
+    jmp update_done
+
+update_not_found:
+    pushl $str_update_fail
+    call printf
+    addl $4, %esp
+
+update_done:
+    leave
+    ret
+
 # Exibir menu e obter escolha
 display_menu:
     pushl %ebp
@@ -714,6 +856,8 @@ menu_loop:
     je opcao3
     cmpl $4, %eax
     je opcao4
+    cmpl $5, %eax
+    je opcao5
     
     # Opção inválida
     pushl $str_invalido
@@ -734,6 +878,10 @@ opcao3:
     jmp menu_loop
 
 opcao4:
+    call update_product_interactive
+    jmp menu_loop
+
+opcao5:
     pushl $str_saindo
     call printf
     addl $4, %esp
