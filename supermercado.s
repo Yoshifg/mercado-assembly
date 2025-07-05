@@ -15,20 +15,24 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
-    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Sair\nEscolha: "
+    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Sair\nEscolha: "
     str_escolha: .asciz "%d"
     str_nome_prompt: .asciz "Digite o nome do produto: "
     str_lote_prompt: .asciz "Digite o lote: "
-    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Lmipeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hostifuti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo"
+    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Lmipeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hostifuti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
     str_data_prompt: .asciz "Digite a data (DD/MM/AAAA): "
     str_fornec_prompt: .asciz "Digite o fornecedor: "
     str_quant_prompt: .asciz "Digite a quantidade: "
     str_compra_prompt: .asciz "Digite o valor de compra (centavos): "
     str_venda_prompt: .asciz "Digite o valor de venda (centavos): "
     str_busca_prompt: .asciz "Digite o nome para buscar: "
+    str_remove_prompt: .asciz "Digite o nome do produto a remover: "
+    str_remove_lote_prompt: .asciz "Digite o lote do produto a remover: "
     str_invalido: .asciz "Opção inválida!\n"
     str_saindo: .asciz "Saindo...\n"
     str_malloc_fail: .asciz "Falha ao alocar memoria!\n"
+    str_remove_success: .asciz "Produto removido com sucesso!\n"
+    str_remove_fail: .asciz "Produto não encontrado para remoção!\n"
     
     # Tipos de produtos
     tipos:
@@ -40,7 +44,7 @@
         .asciz "Padaria"
         .asciz "Carnes"
         .asciz "Higiene"
-        .asciz "Bebês"
+        .asciz "Bebes"
         .asciz "Pet"
         .asciz "Congelados"
         .asciz "Hortifruti"
@@ -56,10 +60,11 @@
     .lcomm input_buffer, 50
     .lcomm escolha, 4
     .lcomm nome_busca, 50
+    .lcomm lote_busca, 20
 
 .section .text
     .globl main
-    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar
+    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar, strncmp
 
 insert_sorted:
     pushl %ebp
@@ -201,7 +206,7 @@ load_loop:
     call malloc
     addl $4, %esp
     testl %eax, %eax
-    jz close_load  # Se malloc falhar, sair
+    jz close_load
     
     movl $0, (%eax)
     leal 4(%eax), %edi
@@ -526,7 +531,6 @@ add_product_interactive:
     jmp add_product_done
 
 add_product_fail:
-    # Imprimir mensagem de falha
     pushl $str_malloc_fail
     call printf
     addl $4, %esp
@@ -570,6 +574,115 @@ search_product_interactive:
     leave
     ret
 
+# Remover produto interativamente
+remove_product_interactive:
+    pushl %ebp
+    movl %esp, %ebp
+    subl $72, %esp        # Alocar espaço para buffers
+    
+    # Ler nome do produto
+    pushl $str_remove_prompt
+    call printf
+    addl $4, %esp
+    
+    leal -50(%ebp), %eax  # Buffer para nome
+    pushl stdin
+    pushl $50
+    pushl %eax
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha
+    leal -50(%ebp), %eax
+    pushl %eax
+    call remove_newline
+    addl $4, %esp
+    
+    # Ler lote do produto
+    pushl $str_remove_lote_prompt
+    call printf
+    addl $4, %esp
+    
+    leal -70(%ebp), %eax  # Buffer para lote (70-50=20 bytes)
+    pushl stdin
+    pushl $20
+    pushl %eax
+    call fgets
+    addl $12, %esp
+    
+    # Remover nova linha
+    leal -70(%ebp), %eax
+    pushl %eax
+    call remove_newline
+    addl $4, %esp
+    
+    # Procurar produto para remover
+    movl head, %ebx       # EBX = atual
+    xorl %esi, %esi       # ESI = anterior
+    
+remove_search_loop:
+    testl %ebx, %ebx
+    jz remove_not_found
+    
+    # Comparar nome
+    leal 20(%ebx), %eax   # Nome do produto atual
+    leal -50(%ebp), %ecx  # Nome buscado
+    pushl %ecx
+    pushl %eax
+    call strcmp
+    addl $8, %esp
+    testl %eax, %eax
+    jnz next_remove_search
+    
+    # Comparar lote
+    leal 70(%ebx), %eax   # Lote do produto atual
+    leal -70(%ebp), %ecx  # Lote buscado
+    pushl $20             # Tamanho máximo para comparação
+    pushl %ecx
+    pushl %eax
+    call strncmp
+    addl $12, %esp
+    testl %eax, %eax
+    jz found_to_remove
+    
+next_remove_search:
+    movl %ebx, %esi       # anterior = atual
+    movl (%ebx), %ebx     # atual = atual->prox
+    jmp remove_search_loop
+
+found_to_remove:
+    # Encontramos o produto para remover
+    testl %esi, %esi
+    jz remove_first       # Se for o primeiro nó
+    
+    # Remover do meio ou fim
+    movl (%ebx), %eax     # EAX = próximo nó
+    movl %eax, (%esi)     # anterior->prox = próximo
+    jmp free_node
+
+remove_first:
+    movl (%ebx), %eax     # EAX = próximo nó
+    movl %eax, head       # head = próximo
+
+free_node:
+    pushl %ebx
+    call free
+    addl $4, %esp
+    
+    pushl $str_remove_success
+    call printf
+    addl $4, %esp
+    jmp remove_done
+
+remove_not_found:
+    pushl $str_remove_fail
+    call printf
+    addl $4, %esp
+
+remove_done:
+    leave
+    ret
+
 # Exibir menu e obter escolha
 display_menu:
     pushl %ebp
@@ -599,6 +712,8 @@ menu_loop:
     je opcao2
     cmpl $3, %eax
     je opcao3
+    cmpl $4, %eax
+    je opcao4
     
     # Opção inválida
     pushl $str_invalido
@@ -615,6 +730,10 @@ opcao2:
     jmp menu_loop
 
 opcao3:
+    call remove_product_interactive
+    jmp menu_loop
+
+opcao4:
     pushl $str_saindo
     call printf
     addl $4, %esp
@@ -645,3 +764,4 @@ memcpy:
     popl %esi
     leave
     ret
+    
