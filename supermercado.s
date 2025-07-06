@@ -3,8 +3,10 @@
 .section .data
     head: .int 0
     filename: .asciz "produtos.bin"
+    report_filename: .asciz "relatorio.txt"  # Novo arquivo de relatório
     modo_escrita: .asciz "wb"
     modo_leitura: .asciz "rb"
+    modo_escrita_txt: .asciz "w"             # Modo para arquivo texto
     
     fmt_nome: .asciz "Nome: %s\n"
     fmt_lote: .asciz "Lote: %s\n"
@@ -15,7 +17,8 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
-    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Sair\nEscolha: "
+    # Menu atualizado com nova opção
+    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Gerar relatório\n7. Sair\nEscolha: "
     str_escolha: .asciz "%d"
     str_nome_prompt: .asciz "Digite o nome do produto: "
     str_lote_prompt: .asciz "Digite o lote: "
@@ -43,6 +46,8 @@
     str_update_success: .asciz "Produto atualizado com sucesso!\n"
     str_update_fail: .asciz "Produto não encontrado para atualização!\n"
     str_update_campo_invalido: .asciz "Campo inválido!\n"
+    str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
+    str_report_fail: .asciz "Erro ao gerar relatório!\n"
     
     # Tipos de produtos
     tipos:
@@ -89,7 +94,7 @@
 
 .section .text
     .globl main
-    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar, strncmp
+    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar, strncmp, fprintf
 
 insert_sorted:
     pushl %ebp
@@ -757,6 +762,141 @@ display_menu:
     ret
 
 # =============================================
+# NOVA FUNÇÃO: GERAR RELATÓRIO EM ARQUIVO TEXTO
+# =============================================
+generate_report:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+
+    # Abrir arquivo de relatório
+    pushl $modo_escrita_txt
+    pushl $report_filename
+    call fopen
+    addl $8, %esp
+    movl %eax, %edi        # EDI = file handle
+    
+    testl %edi, %edi
+    jz generate_report_fail
+
+    movl head, %esi        # ESI = current node
+    
+report_loop:
+    testl %esi, %esi
+    jz close_report
+    
+    # Escrever nome
+    leal 20(%esi), %eax
+    pushl %eax
+    pushl $fmt_nome
+    pushl %edi
+    call fprintf
+    addl $12, %esp
+    
+    # Escrever lote
+    leal 70(%esi), %eax
+    pushl %eax
+    pushl $fmt_lote
+    pushl %edi
+    call fprintf
+    addl $12, %esp
+    
+    # Escrever tipo
+    movl 4(%esi), %eax
+    pushl %eax
+    pushl $fmt_tipo
+    pushl %edi
+    call fprintf
+    addl $12, %esp
+    
+    # Escrever data
+    movl 98(%esi), %eax
+    movl 94(%esi), %ecx
+    movl 90(%esi), %edx
+    pushl %eax
+    pushl %ecx
+    pushl %edx
+    pushl $fmt_data
+    pushl %edi
+    call fprintf
+    addl $20, %esp
+    
+    # Escrever fornecedor
+    leal 102(%esi), %eax
+    pushl %eax
+    pushl $fmt_fornec
+    pushl %edi
+    call fprintf
+    addl $12, %esp
+    
+    # Escrever quantidade
+    movl 8(%esi), %eax
+    pushl %eax
+    pushl $fmt_quant
+    pushl %edi
+    call fprintf
+    addl $12, %esp
+    
+    # Escrever valor de compra
+    movl 12(%esi), %eax
+    xorl %edx, %edx
+    movl $100, %ecx
+    divl %ecx
+    pushl %edx
+    pushl %eax
+    pushl $fmt_compra
+    pushl %edi
+    call fprintf
+    addl $16, %esp
+    
+    # Escrever valor de venda
+    movl 16(%esi), %eax
+    xorl %edx, %edx
+    movl $100, %ecx
+    divl %ecx
+    pushl %edx
+    pushl %eax
+    pushl $fmt_venda
+    pushl %edi
+    call fprintf
+    addl $16, %esp
+    
+    # Escrever divisor
+    pushl $fmt_div
+    pushl %edi
+    call fprintf
+    addl $8, %esp
+    
+    movl (%esi), %esi      # Avançar para próximo nó
+    jmp report_loop
+
+close_report:
+    # Fechar arquivo
+    pushl %edi
+    call fclose
+    addl $4, %esp
+    
+    pushl $str_report_success
+    call printf
+    addl $4, %esp
+    
+    jmp generate_report_done
+
+generate_report_fail:
+    pushl $str_report_fail
+    call printf
+    addl $4, %esp
+
+generate_report_done:
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# =============================================
 # FUNÇÕES DE CONSULTA FINANCEIRA
 # =============================================
 
@@ -1015,7 +1155,7 @@ fm_done:
     ret
 
 # =============================================
-# MAIN COM NUMERAÇÃO CORRIGIDA (5=Financeira, 6=Sair)
+# MAIN COM NOVA OPÇÃO DE RELATÓRIO
 # =============================================
 
 main:
@@ -1036,6 +1176,8 @@ menu_loop:
     je opcao5
     cmpl $6, %eax
     je opcao6
+    cmpl $7, %eax
+    je opcao7
     
     pushl $str_invalido
     call printf
@@ -1062,7 +1204,11 @@ opcao5:
     call finance_menu
     jmp menu_loop
 
-opcao6:
+opcao6: 
+    call generate_report
+    jmp menu_loop
+
+opcao7: 
     pushl $str_saindo
     call printf
     addl $4, %esp
