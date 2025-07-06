@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -no-pie
 TARGET = supermercado
 SRC = supermercado.s
-DATA = produtos.bin
+DATA = produtos.bin relatorio.txt
 
 all: $(TARGET)
 $(TARGET): $(SRC)
