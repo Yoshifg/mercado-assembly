@@ -47,7 +47,7 @@
     str_update_campo_invalido: .asciz "Campo inválido!\n"
     str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
     str_report_fail: .asciz "Erro ao gerar relatório!\n"
-    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\nEscolha: "
+    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\n3. Data de validade (mais antiga primeiro)\nEscolha: "
     str_report_order_invalido: .asciz "Opção inválida! Usando ordenação padrão.\n"
     
     # Tipos de produtos
@@ -97,7 +97,7 @@
 
 .section .text
     .globl main
-    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, memcpy, stdin, getchar, strncmp, fprintf
+    .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, stdin, getchar, strncmp, fprintf
 
 insert_sorted:
     pushl %ebp
@@ -765,7 +765,7 @@ display_menu:
     ret
 
 # =============================================
-# FUNÇÕES AUXILIARES PARA RELATÓRIO ORDENADO (CORRIGIDAS)
+# FUNÇÕES AUXILIARES PARA RELATÓRIO ORDENADO
 # =============================================
 
 # Função: Contar nós na lista
@@ -818,7 +818,7 @@ fill_done:
     leave
     ret
 
-# Função: Ordenar array por quantidade (bubble sort corrigido)
+# Função: Ordenar array por quantidade (bubble sort)
 sort_by_quantity:
     pushl %ebp
     movl %esp, %ebp
@@ -883,8 +883,135 @@ sort_done:
     ret
 
 # =============================================
-# FUNÇÃO: IMPRIMIR PRODUTO EM ARQUIVO (CORRIGIDA)
-# Argumentos: endereço do nó, file handle
+# NOVA FUNÇÃO: Ordenar por data de validade
+# =============================================
+
+# Função auxiliar: Comparar datas de dois nós
+# Entrada: dois ponteiros para nós
+# Saída: eax = -1 se nó1 < nó2, 0 se igual, 1 se nó1 > nó2
+compare_nodes_by_date:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+
+    movl 8(%ebp), %eax   # nó1
+    movl 12(%ebp), %ecx  # nó2
+
+    # Extrair data do nó1
+    movl 90(%eax), %edx   # dia1
+    movl 94(%eax), %ebx   # mes1
+    movl 98(%eax), %esi   # ano1
+
+    # Extrair data do nó2
+    movl 90(%ecx), %edi   # dia2
+    movl 94(%ecx), %eax   # mes2
+    movl 98(%ecx), %ecx   # ano2
+
+    # Comparar anos
+    cmpl %ecx, %esi
+    jl node_date_less
+    jg node_date_greater
+    # Anos iguais, comparar meses
+    cmpl %eax, %ebx
+    jl node_date_less
+    jg node_date_greater
+    # Meses iguais, comparar dias
+    cmpl %edi, %edx
+    jl node_date_less
+    jg node_date_greater
+    # Datas iguais
+    xorl %eax, %eax
+    jmp compare_done
+
+node_date_less:
+    movl $-1, %eax
+    jmp compare_done
+
+node_date_greater:
+    movl $1, %eax
+
+compare_done:
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# Função de ordenação por data (bubble sort)
+sort_by_date:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+    pushl %edx
+
+    movl 8(%ebp), %esi      # Array
+    movl 12(%ebp), %ecx     # n
+    decl %ecx               # n-1
+    jle sort_date_done      # Se n <= 1, não precisa ordenar
+
+    xorl %edi, %edi         # i = 0
+
+outer_loop_date:
+    cmpl %ecx, %edi
+    jge sort_date_done
+
+    movl %ecx, %edx         # j_limite = n-1-i
+    subl %edi, %edx
+
+    xorl %ebx, %ebx         # j = 0
+
+inner_loop_date:
+    cmpl %edx, %ebx
+    jge inner_done_date
+
+    # Carregar ponteiros
+    movl (%esi, %ebx, 4), %eax  # node[j]
+    movl 4(%esi, %ebx, 4), %ecx # node[j+1]
+
+    # Comparar datas
+    pushl %ecx
+    pushl %eax
+    call compare_nodes_by_date
+    addl $8, %esp
+
+    # Se data[j] > data[j+1] (mais recente), trocar
+    cmpl $1, %eax
+    je swap_date
+
+    jmp no_swap_date
+
+swap_date:
+    # Trocar ponteiros
+    movl (%esi, %ebx, 4), %eax
+    movl 4(%esi, %ebx, 4), %ecx
+    movl %ecx, (%esi, %ebx, 4)
+    movl %eax, 4(%esi, %ebx, 4)
+
+no_swap_date:
+    incl %ebx
+    movl 12(%ebp), %edx     # Restaurar ecx (n original)
+    subl %edi, %edx
+    decl %edx               # n-1
+    jmp inner_loop_date
+
+inner_done_date:
+    incl %edi
+    jmp outer_loop_date
+
+sort_date_done:
+    popl %edx
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# =============================================
+# FUNÇÃO: IMPRIMIR PRODUTO EM ARQUIVO
 # =============================================
 print_product_to_file:
     pushl %ebp
@@ -985,7 +1112,7 @@ print_product_to_file:
     ret
 
 # =============================================
-# FUNÇÃO GERAR RELATÓRIO (COM CORREÇÕES)
+# FUNÇÃO GERAR RELATÓRIO (COM ORDENAÇÃO POR DATA)
 # =============================================
 generate_report:
     pushl %ebp
@@ -1013,13 +1140,15 @@ generate_report:
     
     cmpl $2, %eax
     je quantity_order
+    cmpl $3, %eax
+    je date_order
     
     # Ordenação padrão (por nome)
     movl head, %esi        # ESI = current node
     jmp report_loop
     
 quantity_order:
-    # Contar nós
+    # Ordenar por quantidade
     call count_nodes
     movl %eax, node_count
     testl %eax, %eax
@@ -1047,11 +1176,43 @@ quantity_order:
     call sort_by_quantity
     addl $8, %esp
     
+    jmp array_report_loop
+    
+date_order:
+    # Ordenar por data de validade
+    call count_nodes
+    movl %eax, node_count
+    testl %eax, %eax
+    jz close_report
+    
+    # Alocar memória para array de ponteiros
+    movl %eax, %ecx
+    shll $2, %ecx
+    pushl %ecx
+    call malloc
+    addl $4, %esp
+    movl %eax, node_array
+    testl %eax, %eax
+    jz close_report
+    
+    # Preencher array
+    pushl node_count
+    pushl %eax
+    call fill_node_array
+    addl $8, %esp
+    
+    # Ordenar array por data
+    pushl node_count
+    pushl node_array
+    call sort_by_date
+    addl $8, %esp
+    
+array_report_loop:
     # Imprimir usando array ordenado
     movl node_array, %ebx
     movl node_count, %ecx
     
-array_report_loop:
+array_report_loop_inner:
     testl %ecx, %ecx
     jz array_report_done
     
@@ -1067,7 +1228,7 @@ array_report_loop:
     
     addl $4, %ebx
     decl %ecx
-    jmp array_report_loop
+    jmp array_report_loop_inner
     
 array_report_done:
     # Liberar array
@@ -1180,19 +1341,18 @@ compare_dates:
     pushl %ebp
     movl %esp, %ebp
     
-    # Correção dos offsets (valores corretos):
-    movl 16(%ebp), %eax     # ano_prod (correto)
-    cmpl 28(%ebp), %eax     # Compara com ano_atual (correto)
+    movl 16(%ebp), %eax     # ano_prod
+    cmpl 28(%ebp), %eax     # Compara com ano_atual
     jl date_less
     jg date_greater
     
-    movl 12(%ebp), %eax     # mes_prod (correto)
-    cmpl 24(%ebp), %eax     # Compara com mes_atual (correto)
+    movl 12(%ebp), %eax     # mes_prod
+    cmpl 24(%ebp), %eax     # Compara com mes_atual
     jl date_less
     jg date_greater
     
-    movl 8(%ebp), %eax      # dia_prod (correto)
-    cmpl 20(%ebp), %eax     # Compara com dia_atual (correto)
+    movl 8(%ebp), %eax      # dia_prod
+    cmpl 20(%ebp), %eax     # Compara com dia_atual
     jl date_less
     jg date_greater
     
@@ -1210,7 +1370,6 @@ date_done:
     leave
     ret
     
-# Função capital_perdido corrigida
 capital_perdido:
     pushl %ebp
     movl %esp, %ebp
@@ -1260,8 +1419,7 @@ capital_loop:
     movl 94(%ebx), %ecx    # mes_prod
     movl 98(%ebx), %edx    # ano_prod
     
-    # Empilhar parâmetros para compare_dates na ordem correta:
-    # dia_prod, mes_prod, ano_prod, dia_atual, mes_atual, ano_atual
+    # Empilhar parâmetros para compare_dates
     pushl ano_atual
     pushl mes_atual
     pushl dia_atual
@@ -1292,7 +1450,7 @@ capital_done:
     leave
     ret
 
-# Função print_currency corrigida
+# Função print_currency
 # Entrada: valor em centavos (EAX), endereço do formato (EBX)
 print_currency:
     pushl %ebp
@@ -1306,14 +1464,13 @@ print_currency:
     # Empilhar para printf: formato, reais, centavos
     pushl %edx             # centavos
     pushl %eax             # reais
-    pushl %ebx             # formato
+    pushl 8(%ebp)          # formato
     call printf
     addl $12, %esp
     
     leave
     ret
 
-# Menu de consultas financeiras corrigido
 finance_menu:
     pushl %ebp
     movl %esp, %ebp
@@ -1346,26 +1503,30 @@ finance_loop:
 
 fm_total_compra:
     call total_compra
-    movl $fmt_total_compra, %ebx
+    pushl $fmt_total_compra
     call print_currency
+    addl $4, %esp
     jmp finance_loop
 
 fm_total_venda:
     call total_venda
-    movl $fmt_total_venda, %ebx
+    pushl $fmt_total_venda
     call print_currency
+    addl $4, %esp
     jmp finance_loop
 
 fm_lucro:
     call lucro_total
-    movl $fmt_lucro, %ebx
+    pushl $fmt_lucro
     call print_currency
+    addl $4, %esp
     jmp finance_loop
 
 fm_capital_perdido:
     call capital_perdido
-    movl $fmt_capital_perdido, %ebx
+    pushl $fmt_capital_perdido
     call print_currency
+    addl $4, %esp
     jmp finance_loop
 
 fm_done:
@@ -1451,4 +1612,3 @@ memcpy:
     popl %esi
     leave
     ret
-    
