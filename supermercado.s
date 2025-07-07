@@ -1,6 +1,7 @@
 .section .note.GNU-stack,"",@progbits
 
 .section .data
+    //=== Lista e arquivos ===
     head: .int 0
     filename: .asciz "produtos.bin"
     report_filename: .asciz "relatorio.txt"
@@ -8,6 +9,7 @@
     modo_leitura: .asciz "rb"
     modo_escrita_txt: .asciz "w"
     
+    //=== Templates de formatação genéricos ===
     fmt_nome: .asciz "Nome: %s\n"
     fmt_lote: .asciz "Lote: %s\n"
     fmt_tipo: .asciz "Tipo: %d\n"
@@ -17,8 +19,12 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
+
+    //=== Menu principal ===
     menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Gerar relatório\n7. Sair\nEscolha: "
     str_escolha: .asciz "%d"
+
+    //=== Prompts de entrada interativa ===
     str_nome_prompt: .asciz "Digite o nome do produto: "
     str_lote_prompt: .asciz "Digite o lote: "
     str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Limpeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hortifruti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
@@ -45,30 +51,8 @@
     str_update_success: .asciz "Produto atualizado com sucesso!\n"
     str_update_fail: .asciz "Produto não encontrado para atualização!\n"
     str_update_campo_invalido: .asciz "Campo inválido!\n"
-    str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
-    str_report_fail: .asciz "Erro ao gerar relatório!\n"
-    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\n3. Data de validade (mais antiga primeiro)\nEscolha: "
-    str_report_order_invalido: .asciz "Opção inválida! Usando ordenação padrão.\n"
-    
-    # Tipos de produtos
-    tipos:
-        .asciz "Alimento"
-        .asciz "Limpeza"
-        .asciz "Utensilios"
-        .asciz "Bebidas"
-        .asciz "Frios"
-        .asciz "Padaria"
-        .asciz "Carnes"
-        .asciz "Higiene"
-        .asciz "Bebes"
-        .asciz "Pet"
-        .asciz "Congelados"
-        .asciz "Hortifruti"
-        .asciz "Eletronicos"
-        .asciz "Vestuario"
-        .asciz "Outros"
 
-    # Novas strings para consultas financeiras
+    //=== Consultas financeiras ===
     menu_financeiro: .asciz "\n===== CONSULTAS FINANCEIRAS =====\n1. Total de compra\n2. Total de venda\n3. Lucro total\n4. Capital perdido\n5. Voltar\nEscolha: "
     fmt_total_compra: .asciz "Total gasto em compras: %d.%02d\n"
     fmt_total_venda: .asciz "Total estimado de vendas: %d.%02d\n"
@@ -78,6 +62,48 @@
     str_mes_atual: .asciz "Digite o mês atual: "
     str_ano_atual: .asciz "Digite o ano atual: "
     str_aguarde: .asciz "Calculando...\n"
+    
+    //=== Mensagens de relatório ===
+    str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
+    str_report_fail: .asciz "Erro ao gerar relatório!\n"
+    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\n3. Data de validade (mais antiga primeiro)\nEscolha: "
+    str_report_order_invalido: .asciz "Opção inválida! Usando ordenação padrão.\n"
+    fmt_tipo_str: .asciz "Tipo: %s\n"
+
+    //=== Tipos de produto ===
+    .align 4
+    tipos_ptr:
+        .long tipos_str0
+        .long tipos_str1
+        .long tipos_str2
+        .long tipos_str3
+        .long tipos_str4
+        .long tipos_str5
+        .long tipos_str6
+        .long tipos_str7
+        .long tipos_str8
+        .long tipos_str9
+        .long tipos_str10
+        .long tipos_str11
+        .long tipos_str12
+        .long tipos_str13
+        .long tipos_str14
+
+    tipos_str0:  .asciz "Alimento"
+    tipos_str1:  .asciz "Limpeza"
+    tipos_str2:  .asciz "Utensilios"
+    tipos_str3:  .asciz "Bebidas"
+    tipos_str4:  .asciz "Frios"
+    tipos_str5:  .asciz "Padaria"
+    tipos_str6:  .asciz "Carnes"
+    tipos_str7:  .asciz "Higiene"
+    tipos_str8:  .asciz "Bebes"
+    tipos_str9:  .asciz "Pet"
+    tipos_str10: .asciz "Congelados"
+    tipos_str11: .asciz "Hortifruti"
+    tipos_str12: .asciz "Eletronicos"
+    tipos_str13: .asciz "Vestuario"
+    tipos_str14: .asciz "Outros"
 
 # Tamanho fixo da estrutura
 .set produto_size, 152
@@ -285,9 +311,11 @@ print_product:
     call printf
     addl $8, %esp
     
-    movl 4(%ebx), %eax
-    pushl %eax
-    pushl $fmt_tipo
+    movl 4(%ebx), %eax       # pega o campo 'tipo' (1–15)
+    decl %eax                # ajusta para índice 0–14
+    movl tipos_ptr(,%eax,4), %ecx  # carrega ponteiro para a string
+    pushl %ecx
+    pushl $fmt_tipo_str
     call printf
     addl $8, %esp
     
@@ -1041,8 +1069,10 @@ print_product_to_file:
     
     # Escrever tipo
     movl 4(%ebx), %eax
-    pushl %eax
-    pushl $fmt_tipo
+    decl %eax
+    movl tipos_ptr(,%eax,4), %ecx  # Carrega ponteiro para a string
+    pushl %ecx
+    pushl $fmt_tipo_str
     pushl %edi
     call fprintf
     addl $12, %esp
