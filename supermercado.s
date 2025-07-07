@@ -3,10 +3,10 @@
 .section .data
     head: .int 0
     filename: .asciz "produtos.bin"
-    report_filename: .asciz "relatorio.txt"  # Novo arquivo de relatório
+    report_filename: .asciz "relatorio.txt"
     modo_escrita: .asciz "wb"
     modo_leitura: .asciz "rb"
-    modo_escrita_txt: .asciz "w"             # Modo para arquivo texto
+    modo_escrita_txt: .asciz "w"
     
     fmt_nome: .asciz "Nome: %s\n"
     fmt_lote: .asciz "Lote: %s\n"
@@ -17,7 +17,6 @@
     fmt_compra: .asciz "Compra: %d.%02d\n"
     fmt_venda: .asciz "Venda: %d.%02d\n"
     fmt_div: .asciz "----------------\n"
-    # Menu atualizado com nova opção
     menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Gerar relatório\n7. Sair\nEscolha: "
     str_escolha: .asciz "%d"
     str_nome_prompt: .asciz "Digite o nome do produto: "
@@ -48,6 +47,8 @@
     str_update_campo_invalido: .asciz "Campo inválido!\n"
     str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
     str_report_fail: .asciz "Erro ao gerar relatório!\n"
+    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\nEscolha: "
+    str_report_order_invalido: .asciz "Opção inválida! Usando ordenação padrão.\n"
     
     # Tipos de produtos
     tipos:
@@ -91,6 +92,8 @@
     .lcomm dia_atual, 4
     .lcomm mes_atual, 4
     .lcomm ano_atual, 4
+    .lcomm node_array, 4  # Ponteiro para array de nós
+    .lcomm node_count, 4  # Contador de nós
 
 .section .text
     .globl main
@@ -762,33 +765,139 @@ display_menu:
     ret
 
 # =============================================
-# NOVA FUNÇÃO: GERAR RELATÓRIO EM ARQUIVO TEXTO
+# FUNÇÕES AUXILIARES PARA RELATÓRIO ORDENADO (CORRIGIDAS)
 # =============================================
-generate_report:
+
+# Função: Contar nós na lista
+count_nodes:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    
+    movl head, %ebx
+    xorl %eax, %eax  # Contador
+    
+count_loop:
+    testl %ebx, %ebx
+    jz count_done
+    incl %eax
+    movl (%ebx), %ebx
+    jmp count_loop
+    
+count_done:
+    popl %ebx
+    leave
+    ret
+
+# Função: Preencher array com ponteiros para nós
+# Argumentos: endereço do array, número de nós
+fill_node_array:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+    
+    movl head, %ebx
+    movl 8(%ebp), %esi  # Array
+    movl 12(%ebp), %ecx # Contador
+    
+fill_loop:
+    testl %ecx, %ecx
+    jz fill_done
+    movl %ebx, (%esi)
+    addl $4, %esi
+    movl (%ebx), %ebx
+    decl %ecx
+    jmp fill_loop
+    
+fill_done:
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# Função: Ordenar array por quantidade (bubble sort corrigido)
+sort_by_quantity:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+    pushl %edx
+    
+    movl 8(%ebp), %esi      # Array
+    movl 12(%ebp), %ecx     # n
+    decl %ecx               # n-1
+    jle sort_done           # Se n <= 1, não precisa ordenar
+    
+    xorl %edi, %edi         # i = 0
+    
+outer_loop:
+    cmpl %ecx, %edi
+    jge sort_done
+    
+    movl %ecx, %edx         # j_limite = n-1-i
+    subl %edi, %edx
+    
+    xorl %ebx, %ebx         # j = 0
+    
+inner_loop:
+    cmpl %edx, %ebx
+    jge inner_done
+    
+    # Carregar ponteiros
+    movl (%esi, %ebx, 4), %eax  # node[j]
+    movl 4(%esi, %ebx, 4), %ecx # node[j+1]
+    
+    # Comparar quantidades
+    movl 8(%eax), %eax      # quantidade[j]
+    movl 8(%ecx), %ecx      # quantidade[j+1]
+    
+    cmpl %ecx, %eax
+    jge no_swap
+    
+    # Trocar ponteiros
+    movl (%esi, %ebx, 4), %eax
+    movl 4(%esi, %ebx, 4), %ecx
+    movl %ecx, (%esi, %ebx, 4)
+    movl %eax, 4(%esi, %ebx, 4)
+    
+no_swap:
+    incl %ebx
+    movl 12(%ebp), %ecx     # Restaurar ecx (n original)
+    decl %ecx               # n-1
+    jmp inner_loop
+    
+inner_done:
+    incl %edi
+    jmp outer_loop
+    
+sort_done:
+    popl %edx
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# =============================================
+# FUNÇÃO: IMPRIMIR PRODUTO EM ARQUIVO (CORRIGIDA)
+# Argumentos: endereço do nó, file handle
+# =============================================
+print_product_to_file:
     pushl %ebp
     movl %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
 
-    # Abrir arquivo de relatório
-    pushl $modo_escrita_txt
-    pushl $report_filename
-    call fopen
-    addl $8, %esp
-    movl %eax, %edi        # EDI = file handle
-    
-    testl %edi, %edi
-    jz generate_report_fail
+    movl 8(%ebp), %ebx   # nó
+    movl 12(%ebp), %edi  # file handle
 
-    movl head, %esi        # ESI = current node
-    
-report_loop:
-    testl %esi, %esi
-    jz close_report
-    
     # Escrever nome
-    leal 20(%esi), %eax
+    leal 20(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
     pushl %edi
@@ -796,7 +905,7 @@ report_loop:
     addl $12, %esp
     
     # Escrever lote
-    leal 70(%esi), %eax
+    leal 70(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
     pushl %edi
@@ -804,7 +913,7 @@ report_loop:
     addl $12, %esp
     
     # Escrever tipo
-    movl 4(%esi), %eax
+    movl 4(%ebx), %eax
     pushl %eax
     pushl $fmt_tipo
     pushl %edi
@@ -812,9 +921,9 @@ report_loop:
     addl $12, %esp
     
     # Escrever data
-    movl 98(%esi), %eax
-    movl 94(%esi), %ecx
-    movl 90(%esi), %edx
+    movl 98(%ebx), %eax
+    movl 94(%ebx), %ecx
+    movl 90(%ebx), %edx
     pushl %eax
     pushl %ecx
     pushl %edx
@@ -824,7 +933,7 @@ report_loop:
     addl $20, %esp
     
     # Escrever fornecedor
-    leal 102(%esi), %eax
+    leal 102(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
     pushl %edi
@@ -832,7 +941,7 @@ report_loop:
     addl $12, %esp
     
     # Escrever quantidade
-    movl 8(%esi), %eax
+    movl 8(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
     pushl %edi
@@ -840,7 +949,7 @@ report_loop:
     addl $12, %esp
     
     # Escrever valor de compra
-    movl 12(%esi), %eax
+    movl 12(%ebx), %eax
     xorl %edx, %edx
     movl $100, %ecx
     divl %ecx
@@ -852,7 +961,7 @@ report_loop:
     addl $16, %esp
     
     # Escrever valor de venda
-    movl 16(%esi), %eax
+    movl 16(%ebx), %eax
     xorl %edx, %edx
     movl $100, %ecx
     divl %ecx
@@ -868,10 +977,118 @@ report_loop:
     pushl %edi
     call fprintf
     addl $8, %esp
+
+    popl %edi
+    popl %esi
+    popl %ebx
+    leave
+    ret
+
+# =============================================
+# FUNÇÃO GERAR RELATÓRIO (COM CORREÇÕES)
+# =============================================
+generate_report:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+    pushl %esi
+    pushl %edi
+    pushl %edx
+
+    # Abrir arquivo de relatório
+    pushl $modo_escrita_txt
+    pushl $report_filename
+    call fopen
+    addl $8, %esp
+    movl %eax, %edi        # EDI = file handle
     
+    testl %edi, %edi
+    jz generate_report_fail
+
+    # Perguntar tipo de ordenação
+    pushl $str_report_order_prompt
+    call printf
+    addl $4, %esp
+    call read_int
+    
+    cmpl $2, %eax
+    je quantity_order
+    
+    # Ordenação padrão (por nome)
+    movl head, %esi        # ESI = current node
+    jmp report_loop
+    
+quantity_order:
+    # Contar nós
+    call count_nodes
+    movl %eax, node_count
+    testl %eax, %eax
+    jz close_report
+    
+    # Alocar memória para array de ponteiros
+    movl %eax, %ecx
+    shll $2, %ecx          # n * 4 bytes
+    pushl %ecx
+    call malloc
+    addl $4, %esp
+    movl %eax, node_array
+    testl %eax, %eax
+    jz close_report
+    
+    # Preencher array
+    pushl node_count
+    pushl %eax
+    call fill_node_array
+    addl $8, %esp
+    
+    # Ordenar array por quantidade
+    pushl node_count
+    pushl node_array
+    call sort_by_quantity
+    addl $8, %esp
+    
+    # Imprimir usando array ordenado
+    movl node_array, %ebx
+    movl node_count, %ecx
+    
+array_report_loop:
+    testl %ecx, %ecx
+    jz array_report_done
+    
+    movl (%ebx), %eax      # Carregar nó
+    
+    # Escrever nó no arquivo
+    pushl %ecx
+    pushl %edi             # file handle
+    pushl %eax             # nó
+    call print_product_to_file
+    addl $8, %esp
+    popl %ecx
+    
+    addl $4, %ebx
+    decl %ecx
+    jmp array_report_loop
+    
+array_report_done:
+    # Liberar array
+    pushl node_array
+    call free
+    addl $4, %esp
+    jmp close_report
+    
+report_loop:
+    testl %esi, %esi
+    jz close_report
+    
+    # Escrever nó no arquivo
+    pushl %edi             # file handle
+    pushl %esi             # nó
+    call print_product_to_file
+    addl $8, %esp
+
     movl (%esi), %esi      # Avançar para próximo nó
     jmp report_loop
-
+    
 close_report:
     # Fechar arquivo
     pushl %edi
@@ -890,6 +1107,7 @@ generate_report_fail:
     addl $4, %esp
 
 generate_report_done:
+    popl %edx
     popl %edi
     popl %esi
     popl %ebx
@@ -1155,7 +1373,7 @@ fm_done:
     ret
 
 # =============================================
-# MAIN COM NOVA OPÇÃO DE RELATÓRIO
+# MAIN
 # =============================================
 
 main:
@@ -1204,11 +1422,11 @@ opcao5:
     call finance_menu
     jmp menu_loop
 
-opcao6: 
+opcao6:
     call generate_report
     jmp menu_loop
 
-opcao7: 
+opcao7:
     pushl $str_saindo
     call printf
     addl $4, %esp
@@ -1233,3 +1451,4 @@ memcpy:
     popl %esi
     leave
     ret
+    
