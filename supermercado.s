@@ -171,11 +171,23 @@
     .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, stdin, getchar, strncmp, fprintf
 
 /* --------------------------------------------------------|
+|                                                          |
 | SEÇÃO: GERENCIAMENTO DA LISTA                            |
 | Funções de inserção, carregamento e gravação da lista    |
+|                                                          |
 |---------------------------------------------------------*/
 .section .text
     .globl insert_sorted, save_list, load_list
+
+
+//------------------------------------------------------------------------------
+// Função: insert_sorted
+// Insere um nó na lista ligada de forma ordenada por nome.
+// Parâmetros:
+//   [EBP+8] -> ponteiro para novo nó (struct produto).
+// Registros usados:
+//   EBX = novo nó, EDI = nó atual, ESI = nó anterior.
+//------------------------------------------------------------------------------
 insert_sorted:
     pushl %ebp
     movl  %esp, %ebp
@@ -183,380 +195,488 @@ insert_sorted:
     pushl %esi
     pushl %edi
     
-    movl 8(%ebp), %ebx
-    movl head, %edi
-    xorl %esi, %esi
+    movl  8(%ebp), %ebx  # EBX = novo nó
+    movl  head, %edi     # EDI = head (início da lista)
+    xorl  %esi, %esi     # ESI = nó anterior (inicialmente vazio)
 
     testl %edi, %edi
-    jz insert_empty
+    jz    insert_empty
     
 insertion_loop:
-    leal 20(%ebx), %eax
-    leal 20(%edi), %ecx
-    
+    # Comparar nome do novo nó com o atual
+    leal  20(%ebx), %eax
+    leal  20(%edi), %ecx
     pushl %ecx
     pushl %eax
-    call strcmp
-    addl $8, %esp
+    call  strcmp
+    addl  $8, %esp
+    cmpl  $0, %eax
+    jle   insert_here
     
-    cmpl $0, %eax
-    jle insert_here
-    
-    movl %edi, %esi
-    movl (%edi), %edi
+    # Avançar na lista
+    movl  %edi, %esi
+    movl  (%edi), %edi
     
     testl %edi, %edi
-    jnz insertion_loop
+    jnz   insertion_loop
     
-    movl %ebx, (%esi)
-    movl $0, (%ebx)
-    jmp insert_done
+    # Inserir no fim
+    movl  %ebx, (%esi)
+    movl  $0, (%ebx)
+    jmp   insert_done
 
 insert_here:
     testl %esi, %esi
-    jz insert_front
+    jz    insert_front
     
-    movl %ebx, (%esi)
-    movl %edi, (%ebx)
-    jmp insert_done
+    # Inserir no meio
+    movl  %ebx, (%esi) 
+    movl  %edi, (%ebx)
+    jmp   insert_done
 
 insert_front:
-    movl head, %ecx
-    movl %ecx, (%ebx)
-    movl %ebx, head
-    jmp insert_done
+    # Inserir antes do head
+    movl  head, %ecx
+    movl  %ecx, (%ebx)
+    movl  %ebx, head
+    jmp   insert_done
 
 insert_empty:
-    movl %ebx, head
-    movl $0, (%ebx)
+    # Lista vazia, inicializa o head
+    movl  %ebx, head
+    movl  $0, (%ebx)
 
 insert_done:
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: save_list
+// Persiste lista em “produtos.bin” gravando cada nó em formato binário.
+// Uso:
+//   fopen(filename, modo_escrita)
+//   for cada nó:
+//     memcpy(buffer, nó+4, dados_size)
+//     fwrite(buffer, dados_size,1,FILE)
+//   fclose(FILE)
+//------------------------------------------------------------------------------
 save_list:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     
+    # Abre o arquivo para escrita em binário
     pushl $modo_escrita
     pushl $filename
-    call fopen
-    addl $8, %esp
-    movl %eax, %ebx
+    call  fopen
+    addl  $8, %esp
+    movl  %eax, %ebx
     
     testl %ebx, %ebx
-    jz save_done
+    jz    save_done
     
-    movl head, %esi
+    movl  head, %esi
 save_loop:
     testl %esi, %esi
-    jz close_save
+    jz    close_save
     
-    leal 4(%esi), %eax
+    # Prepara o buffer para escrita
+    leal  4(%esi), %eax
     pushl $dados_size
     pushl %eax
     pushl $buffer
-    call memcpy
-    addl $12, %esp
+    call  memcpy
+    addl  $12, %esp
     
+    # Grava o buffer no arquivo
     pushl %ebx
     pushl $dados_size
     pushl $1
     pushl $buffer
-    call fwrite
-    addl $16, %esp
+    call  fwrite
+    addl  $16, %esp
     
-    movl (%esi), %esi
-    jmp save_loop
+    movl  (%esi), %esi
+    jmp   save_loop
     
 close_save:
     pushl %ebx
-    call fclose
-    addl $4, %esp
+    call  fclose
+    addl  $4, %esp
     
 save_done:
-    popl %esi
-    popl %ebx
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: load_list
+// Carrega lista de “produtos.bin” alocando nós e inserindo ordenado.
+// Uso:
+//   fopen(filename, modo_leitura)
+//   while fread(buffer,dados_size,1,FILE)==dados_size:
+//     malloc(produto_size)
+//     memcpy(novo+4,buffer,dados_size)
+//     insert_sorted(novo)
+//   fclose(FILE)
+//------------------------------------------------------------------------------
 load_list:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     
+    # Abre o arquivo para leitura em binário
     pushl $modo_leitura
     pushl $filename
-    call fopen
-    addl $8, %esp
-    movl %eax, %ebx
+    call  fopen
+    addl  $8, %esp
+    movl  %eax, %ebx
     
     testl %ebx, %ebx
-    jz load_done
+    jz    load_done
     
 load_loop:
+    # Lê dados do arquivo
     pushl %ebx
     pushl $dados_size
     pushl $1
     pushl $buffer
-    call fread
-    addl $16, %esp
+    call  fread
+    addl  $16, %esp
     
-    cmpl $dados_size, %eax
-    jne close_load
+    cmpl  $dados_size, %eax
+    jne   close_load
     
+    # Aloca novo nó na memória
     pushl $produto_size
-    call malloc
-    addl $4, %esp
+    call  malloc
+    addl  $4, %esp
     testl %eax, %eax
-    jz close_load
+    jz    close_load
     
     movl $0, (%eax)
     leal 4(%eax), %edi
     
+    // copiar buffer para o nó
     pushl $dados_size
     pushl $buffer
     pushl %edi
-    call memcpy
-    addl $12, %esp
+    call  memcpy
+    addl  $12, %esp
     
+    // inserir nó na lista
     pushl %eax
-    call insert_sorted
-    addl $4, %esp
+    call  insert_sorted
+    addl  $4, %esp
     
-    jmp load_loop
+    jmp   load_loop
     
 close_load:
     pushl %ebx
-    call fclose
-    addl $4, %esp
+    call  fclose
+    addl  $4, %esp
     
 load_done:
-    popl %esi
-    popl %ebx
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
 /* --------------------------------------------------------|
+|                                                          |
 | Section: Product I/O                                     |
 | print_product, search_product, leitura interativa        |
+|                                                          |
 |---------------------------------------------------------*/
     .globl print_product, search_product
+
+//------------------------------------------------------------------------------
+// Função: print_product
+// Imprime todos os campos de um nó de produto na saída padrão.
+// Parâmetros:
+//   [EBP+8] -> ponteiro para struct produto.
+// Registros usados:
+//   EBX = ponteiro para produto,
+//   EAX/ECX/EDX = auxiliares para formatação.
+//------------------------------------------------------------------------------
 print_product:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     
-    movl 8(%ebp), %ebx
+    movl  8(%ebp), %ebx
     
-    leal 20(%ebx), %eax
+    # Imprime nome
+    leal  20(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
-    call printf
-    addl $8, %esp
+    call  printf
+    addl  $8, %esp
     
-    leal 70(%ebx), %eax
+    # Imprime lote
+    leal  70(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
-    call printf
-    addl $8, %esp
+    call  printf
+    addl  $8, %esp
     
-    movl 4(%ebx), %eax             # pega o campo 'tipo' (1–15)
-    decl %eax                      # ajusta para índice 0–14
-    movl tipos_ptr(,%eax,4), %ecx  # carrega ponteiro para a string
+    # Imprime tipo
+    movl  4(%ebx), %eax             # pega o campo 'tipo' (1–15)
+    decl  %eax                      # ajusta para índice 0–14
+    movl  tipos_ptr(,%eax,4), %ecx  # carrega ponteiro para a string
     pushl %ecx
     pushl $fmt_tipo_str
-    call printf
-    addl $8, %esp
+    call  printf
+    addl  $8, %esp
     
-    movl 98(%ebx), %eax
-    movl 94(%ebx), %ecx
-    movl 90(%ebx), %edx
+    # Imprime data de validade
+    movl  98(%ebx), %eax
+    movl  94(%ebx), %ecx
+    movl  90(%ebx), %edx
     pushl %eax
     pushl %ecx
     pushl %edx
     pushl $fmt_data
-    call printf
-    addl $16, %esp
+    call  printf
+    addl  $16, %esp
     
-    leal 102(%ebx), %eax
+    # Imprime fornecedor
+    leal  102(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
-    call printf
-    addl $8, %esp
+    call  printf
+    addl  $8, %esp
     
-    movl 8(%ebx), %eax
+    # Imprime quantidade
+    movl  8(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
-    call printf
-    addl $8, %esp
+    call  printf
+    addl  $8, %esp
     
-    movl 12(%ebx), %eax
-    xorl %edx, %edx
-    movl $100, %ecx
-    divl %ecx
+    # Imprime valor de compra
+    movl  12(%ebx), %eax
+    xorl  %edx, %edx
+    movl  $100, %ecx
+    divl  %ecx
     pushl %edx
     pushl %eax
     pushl $fmt_compra
-    call printf
-    addl $12, %esp
-    
-    movl 16(%ebx), %eax
-    xorl %edx, %edx
-    movl $100, %ecx
-    divl %ecx
+    call  printf
+    addl  $12, %esp
+
+    # Imprime valor de venda    
+    movl  16(%ebx), %eax
+    xorl  %edx, %edx
+    movl  $100, %ecx
+    divl  %ecx
     pushl %edx
     pushl %eax
     pushl $fmt_venda
-    call printf
-    addl $12, %esp
+    call  printf
+    addl  $12, %esp
     
+    # Imprime linha divisória
     pushl $fmt_div
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
     
-    popl %ebx
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: search_product
+// Percorre a lista comparando nome e imprime cada nó igual.
+// Parâmetros:
+//   [EBP+8] -> ponteiro para string buscada.
+// Registros usados:
+//   ESI = busca, EBX = ponteiro corrente na lista.
+//------------------------------------------------------------------------------
 search_product:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     
-    movl 8(%ebp), %esi
-    movl head, %ebx
+    movl  8(%ebp), %esi
+    movl  head, %ebx
     
 search_loop:
     testl %ebx, %ebx
-    jz search_done
+    jz    search_done
     
-    leal 20(%ebx), %eax
+    leal  20(%ebx), %eax
     pushl %esi
     pushl %eax
-    call strcmp
-    addl $8, %esp
+    call  strcmp
+    addl  $8, %esp
     
     testl %eax, %eax
-    jnz next_product
+    jnz   next_product
     
     pushl %ebx
-    call print_product
-    addl $4, %esp
+    call  print_product
+    addl  $4, %esp
     
 next_product:
-    movl (%ebx), %ebx
-    jmp search_loop
+    movl  (%ebx), %ebx
+    jmp   search_loop
     
 search_done:
-    popl %esi
-    popl %ebx
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: read_int
+// Lê um inteiro via scanf e retorna em EAX.
+// Também descarta o resto da linha.
+// Saída:
+//   EAX = valor lido.
+//------------------------------------------------------------------------------
 read_int:
     pushl %ebp
-    movl %esp, %ebp
-    subl $8, %esp
+    movl  %esp, %ebp
+    subl  $8, %esp
     
-    leal -4(%ebp), %eax
+    leal  -4(%ebp), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
-    movl -4(%ebp), %eax
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+    movl  -4(%ebp), %eax
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: clear_input_buffer
+// Descarta até encontrar '\n' ou EOF.
+//------------------------------------------------------------------------------
 clear_input_buffer:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
 clear_loop:
-    call getchar
-    cmpl $10, %eax
-    je clear_done
-    cmpl $-1, %eax
-    jne clear_loop
+    call  getchar
+    cmpl  $10, %eax
+    je    clear_done
+    cmpl  $-1, %eax
+    jne   clear_loop
 clear_done:
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: read_string_with_prompt
+// Exibe um prompt e lê linha em buffer, removendo o '\n'.
+// Parâmetros:
+//   [EBP+8] = ponteiro para prompt (string),
+//   [EBP+12] = ponteiro para buffer (char[]).
+// Registros usados:
+//   EBX = buffer.
+//------------------------------------------------------------------------------
 read_string_with_prompt:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
-    movl 8(%ebp), %eax
+    movl  8(%ebp), %eax
     pushl %eax
-    call printf
-    addl $4, %esp
-    movl 12(%ebp), %ebx
+    call  printf
+    addl  $4, %esp
+    movl  12(%ebp), %ebx
     pushl stdin
     pushl $50
     pushl %ebx
-    call fgets
-    addl $12, %esp
+    call  fgets
+    addl  $12, %esp
     pushl %ebx
-    call remove_newline
-    addl $4, %esp
-    popl %ebx
+    call  remove_newline
+    addl  $4, %esp
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: remove_newline
+// Substitui o primeiro '\n' em uma string por '\0'.
+// Parâmetros:
+//   [EBP+8] = ponteiro para string.
+// Registros usados:
+//   EDI = cursor na string, AL = caractere atual.
+//------------------------------------------------------------------------------
 remove_newline:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %edi
-    movl 8(%ebp), %edi
+    movl  8(%ebp), %edi
 rn_loop:
-    movb (%edi), %al
+    movb  (%edi), %al
     testb %al, %al
-    jz rn_end
-    cmpb $10, %al
-    je rn_found
-    incl %edi
-    jmp rn_loop
+    jz    rn_end
+    cmpb  $10, %al
+    je    rn_found
+    incl  %edi
+    jmp   rn_loop
 rn_found:
-    movb $0, (%edi)
+    movb  $0, (%edi)
 rn_end:
-    popl %edi
+    popl  %edi
     leave
     ret
 
 /* --------------------------------------------------------|
+|                                                          |
 | Section: Interactive CRUD Handlers                       |
 | add/search/remove/update product                         |
+|                                                          |
 |---------------------------------------------------------*/
     .globl add_product_interactive, search_product_interactive
     .globl remove_product_interactive, update_product_interactive
+
+//------------------------------------------------------------------------------
+// add_product_interactive
+// 1) Aloca um novo nó de produto com malloc(produto_size).
+// 2) Lê interativamente os campos do produto.
+// 3) Insere o nó na lista ordenada (insert_sorted).
+//------------------------------------------------------------------------------
 add_product_interactive:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
+
+    # Alocação
     pushl $produto_size
-    call malloc
-    addl $4, %esp
+    call  malloc
+    addl  $4, %esp
     testl %eax, %eax
-    jz add_product_fail
-    movl %eax, %ebx
-    movl $0, (%ebx)
-    leal 20(%ebx), %eax
+    jz    add_product_fail
+
+    movl  %eax, %ebx
+    movl  $0, (%ebx)
+
+    # Leitura do nome
+    leal  20(%ebx), %eax
     pushl %eax
     pushl $str_nome_prompt
-    call read_string_with_prompt
-    addl $8, %esp
-    leal 70(%ebx), %eax
+    call  read_string_with_prompt
+    addl  $8, %esp
+
+    # Leitura do lote
+    leal  70(%ebx), %eax
     pushl %eax
     pushl $str_lote_prompt
-    call read_string_with_prompt
-    addl $8, %esp
+    call  read_string_with_prompt
+    addl  $8, %esp
+
+    # Leitura do tipo (inteiro)
     pushl $str_tipo_prompt
     call  printf
     addl  $4, %esp
@@ -566,6 +686,8 @@ add_product_interactive:
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
+
+    # Leitura da data de validade (dia)
     pushl $str_dia_prompt
     call  printf
     addl  $4, %esp
@@ -575,341 +697,394 @@ add_product_interactive:
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
+
+    # Leitura da data de validade (mês)
     pushl $str_mes_prompt
-    call printf
-    addl $4, %esp
-    leal 94(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  94(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+
+    # Leitura da data de validade (ano)
     pushl $str_ano_prompt
-    call printf
-    addl $4, %esp
-    leal 98(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  98(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
-    leal 102(%ebx), %eax
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+
+    # Leitura do fornecedor
+    leal  102(%ebx), %eax
     pushl %eax
     pushl $str_fornec_prompt
-    call read_string_with_prompt
-    addl $8, %esp
+    call  read_string_with_prompt
+    addl  $8, %esp
+
+    # Leitura da quantidade
     pushl $str_quant_prompt
-    call printf
-    addl $4, %esp
-    leal 8(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  8(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+
+    # Leitura do valor de compra
     pushl $str_compra_prompt
-    call printf
-    addl $4, %esp
-    leal 12(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  12(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+
+    # Leitura do valor de venda
     pushl $str_venda_prompt
-    call printf
-    addl $4, %esp
-    leal 16(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  16(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+
+    # Insere o nó na lista ordenada
     pushl %ebx
-    call insert_sorted
-    addl $4, %esp
-    jmp add_product_done
+    call  insert_sorted
+    addl  $4, %esp
+    jmp   add_product_done
 add_product_fail:
     pushl $str_malloc_fail
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
 add_product_done:
-    popl %ebx
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// search_product_interactive
+// 1) Lê nome do usuário em buffer temporário.
+// 2) Chama search_product(nome) para exibir resultados.
+//------------------------------------------------------------------------------
 search_product_interactive:
     pushl %ebp
-    movl %esp, %ebp
-    subl $52, %esp
+    movl  %esp, %ebp
+    subl  $52, %esp
     pushl $str_busca_prompt
-    call printf
-    addl $4, %esp
-    leal -50(%ebp), %eax
+    call  printf
+    addl  $4, %esp
+    leal  -50(%ebp), %eax
     pushl stdin
     pushl $50
     pushl %eax
-    call fgets
-    addl $12, %esp
-    leal -50(%ebp), %eax
+    call  fgets
+    addl  $12, %esp
+    leal  -50(%ebp), %eax
     pushl %eax
-    call remove_newline
-    addl $4, %esp
-    leal -50(%ebp), %eax
+    call  remove_newline
+    addl  $4, %esp
+    leal  -50(%ebp), %eax
     pushl %eax
-    call search_product
-    addl $4, %esp
+    call  search_product
+    addl  $4, %esp
     leave
     ret
 
+//------------------------------------------------------------------------------
+// remove_product_interactive
+// 1) Lê nome e lote em buffers locais.
+// 2) Percorre lista, compara nome+lote e remove nó encontrado.
+//------------------------------------------------------------------------------
 remove_product_interactive:
     pushl %ebp
-    movl %esp, %ebp
-    subl $72, %esp
+    movl  %esp, %ebp
+    subl  $72, %esp
+
+    # Lê nome do produto
     pushl $str_remove_prompt
-    call printf
-    addl $4, %esp
-    leal -50(%ebp), %eax
+    call  printf
+    addl  $4, %esp
+    leal  -50(%ebp), %eax
     pushl stdin
     pushl $50
     pushl %eax
-    call fgets
-    addl $12, %esp
-    leal -50(%ebp), %eax
+    call  fgets
+    addl  $12, %esp
+    leal  -50(%ebp), %eax
     pushl %eax
-    call remove_newline
-    addl $4, %esp
+    call  remove_newline
+    addl  $4, %esp
+
+    # Lê lote do produto
     pushl $str_remove_lote_prompt
-    call printf
-    addl $4, %esp
-    leal -70(%ebp), %eax
+    call  printf
+    addl  $4, %esp
+    leal  -70(%ebp), %eax
     pushl stdin
     pushl $20
     pushl %eax
-    call fgets
-    addl $12, %esp
-    leal -70(%ebp), %eax
+    call  fgets
+    addl  $12, %esp
+    leal  -70(%ebp), %eax
     pushl %eax
-    call remove_newline
-    addl $4, %esp
-    movl head, %ebx
-    xorl %esi, %esi
+    call  remove_newline
+    addl  $4, %esp
+
+    movl  head, %ebx
+    xorl  %esi, %esi
 remove_search_loop:
     testl %ebx, %ebx
-    jz remove_not_found
-    leal 20(%ebx), %eax
-    leal -50(%ebp), %ecx
+    jz    remove_not_found
+    leal  20(%ebx), %eax
+    leal  -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
-    call strcmp
-    addl $8, %esp
+    call  strcmp
+    addl  $8, %esp
     testl %eax, %eax
-    jnz next_remove_search
-    leal 70(%ebx), %eax
-    leal -70(%ebp), %ecx
+    jnz   next_remove_search
+    leal  70(%ebx), %eax
+    leal  -70(%ebp), %ecx
     pushl $20
     pushl %ecx
     pushl %eax
-    call strncmp
-    addl $12, %esp
+    call  strncmp
+    addl  $12, %esp
     testl %eax, %eax
-    jz found_to_remove
+    jz    found_to_remove
 next_remove_search:
     movl %ebx, %esi
     movl (%ebx), %ebx
     jmp remove_search_loop
 found_to_remove:
     testl %esi, %esi
-    jz remove_first
-    movl (%ebx), %eax
-    movl %eax, (%esi)
-    jmp free_node
+    jz    remove_first
+    movl  (%ebx), %eax
+    movl  %eax, (%esi)
+    jmp   free_node
 remove_first:
-    movl (%ebx), %eax
-    movl %eax, head
+    movl  (%ebx), %eax
+    movl  %eax, head
 free_node:
     pushl %ebx
-    call free
-    addl $4, %esp
+    call  free
+    addl  $4, %esp
     pushl $str_remove_success
-    call printf
-    addl $4, %esp
-    jmp remove_done
+    call  printf
+    addl  $4, %esp
+    jmp   remove_done
 remove_not_found:
     pushl $str_remove_fail
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
 remove_done:
     leave
     ret
 
+//------------------------------------------------------------------------------
+// update_product_interactive
+// 1) Lê nome e lote para buscar nó.
+// 2) Se encontrado, pergunta campo a atualizar (1=quant,2=venda).
+// 3) Lê valor e grava no campo correspondente.
+//------------------------------------------------------------------------------
 update_product_interactive:
     pushl %ebp
-    movl %esp, %ebp
-    subl $72, %esp
+    movl  %esp, %ebp
+    subl  $72, %esp
     pushl $str_update_prompt
-    call printf
-    addl $4, %esp
-    leal -50(%ebp), %eax
+    call  printf
+    addl  $4, %esp
+    leal  -50(%ebp), %eax
     pushl stdin
     pushl $50
     pushl %eax
-    call fgets
-    addl $12, %esp
-    leal -50(%ebp), %eax
+    call  fgets
+    addl  $12, %esp
+    leal  -50(%ebp), %eax
     pushl %eax
-    call remove_newline
-    addl $4, %esp
+    call  remove_newline
+    addl  $4, %esp
     pushl $str_update_lote_prompt
-    call printf
-    addl $4, %esp
-    leal -70(%ebp), %eax
+    call  printf
+    addl  $4, %esp
+    leal  -70(%ebp), %eax
     pushl stdin
     pushl $20
     pushl %eax
-    call fgets
-    addl $12, %esp
-    leal -70(%ebp), %eax
+    call  fgets
+    addl  $12, %esp
+    leal  -70(%ebp), %eax
     pushl %eax
-    call remove_newline
-    addl $4, %esp
-    movl head, %ebx
+    call  remove_newline
+    addl  $4, %esp
+    movl  head, %ebx
 update_search_loop:
     testl %ebx, %ebx
-    jz update_not_found
-    leal 20(%ebx), %eax
-    leal -50(%ebp), %ecx
+    jz    update_not_found
+    leal  20(%ebx), %eax
+    leal  -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
-    call strcmp
-    addl $8, %esp
+    call  strcmp
+    addl  $8, %esp
     testl %eax, %eax
-    jnz next_update_search
-    leal 70(%ebx), %eax
-    leal -70(%ebp), %ecx
+    jnz   next_update_search
+    leal  70(%ebx), %eax
+    leal  -70(%ebp), %ecx
     pushl $20
     pushl %ecx
     pushl %eax
-    call strncmp
-    addl $12, %esp
+    call  strncmp
+    addl  $12, %esp
     testl %eax, %eax
-    jz found_to_update
+    jz    found_to_update
 next_update_search:
-    movl (%ebx), %ebx
-    jmp update_search_loop
+    movl  (%ebx), %ebx
+    jmp   update_search_loop
 found_to_update:
     pushl $str_update_campo
-    call printf
-    addl $4, %esp
-    call read_int
-    cmpl $1, %eax
-    je update_quantidade
-    cmpl $2, %eax
-    je update_venda
+    call  printf
+    addl  $4, %esp
+    call  read_int
+    cmpl  $1, %eax
+    je    update_quantidade
+    cmpl  $2, %eax
+    je    update_venda
     pushl $str_update_campo_invalido
-    call printf
-    addl $4, %esp
-    jmp update_done
+    call  printf
+    addl  $4, %esp
+    jmp   update_done
 update_quantidade:
     pushl $str_nova_quant
-    call printf
-    addl $4, %esp
-    leal 8(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  8(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
-    jmp update_success
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
+    jmp   update_success
 update_venda:
     pushl $str_nova_venda
-    call printf
-    addl $4, %esp
-    leal 16(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  16(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
 update_success:
     pushl $str_update_success
-    call printf
-    addl $4, %esp
-    jmp update_done
+    call  printf
+    addl  $4, %esp
+    jmp   update_done
 update_not_found:
     pushl $str_update_fail
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
 update_done:
     leave
     ret
 
+//------------------------------------------------------------------------------
+// display_menu
+// Exibe menu principal e retorna escolha em EAX.
+//------------------------------------------------------------------------------
 display_menu:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl $menu
-    call printf
-    addl $4, %esp
-    call read_int
+    call  printf
+    addl  $4, %esp
+    call  read_int
     leave
     ret
 
-// ============================================
-// Section: Report Generation
-// count_nodes, fill_node_array, sorts, print_product_to_file, generate_report
-// ============================================
+/*---------------------------------------------------------|
+|                                                          |
+| Section: Report Generation                               |
+| Funções: count_nodes, fill_node_array, sorts,            |
+|          print_product_to_file, generate_report          |
+|                                                          |
+|---------------------------------------------------------*/
     .globl count_nodes, fill_node_array
     .globl sort_by_quantity, sort_by_date, print_product_to_file, generate_report
+
+//------------------------------------------------------------------------------
+// Função: count_nodes
+// Conta quantos nós existem na lista ligada.
+// Saída: EAX = número de nós.
+//------------------------------------------------------------------------------
 count_nodes:
     pushl %ebp
-    movl %esp, %ebp
-    pushl %ebx
-    
-    movl head, %ebx
-    xorl %eax, %eax  # Contador
+    movl  %esp, %ebp
+    pushl %ebx            # EBX = ponteiro corrente
+    movl  head, %ebx      # inicia em head
+    xorl  %eax, %eax      # EAX = 0 (contador)
     
 count_loop:
-    testl %ebx, %ebx
-    jz count_done
-    incl %eax
-    movl (%ebx), %ebx
-    jmp count_loop
+    testl %ebx, %ebx      # Enquanto EBX != NULL 
+    jz    count_done
+    incl  %eax            # conta mais um
+    movl  (%ebx), %ebx    # avança para next
+    jmp   count_loop
     
 count_done:
-    popl %ebx
+    popl  %ebx
     leave
     ret
 
-# Função: Preencher array com ponteiros para nós
-# Argumentos: endereço do array, número de nós
+//------------------------------------------------------------------------------
+// Função: fill_node_array
+// Transforma a lista em um array de ponteiros para fácil ordenação.
+// Parâmetros: [EBP+8]=endereço do array, [EBP+12]=número de nós.
+//------------------------------------------------------------------------------
 fill_node_array:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
-    
-    movl head, %ebx
-    movl 8(%ebp), %esi  # Array
-    movl 12(%ebp), %ecx # Contador
+    movl  head, %ebx      # EBX = current node
+    movl  8(%ebp), %esi   # ESI = ponteiro base do array
+    movl  12(%ebp), %ecx  # ECX = contador de elementos
     
 fill_loop:
-    testl %ecx, %ecx
-    jz fill_done
-    movl %ebx, (%esi)
-    addl $4, %esi
-    movl (%ebx), %ebx
-    decl %ecx
-    jmp fill_loop
+    testl %ecx, %ecx      # Se chegou a zero
+    jz    fill_done
+    movl  %ebx, (%esi)    # array[i] = nó atual
+    addl  $4, %esi        # avança para próxima posição
+    movl  (%ebx), %ebx    # nó = nó->next
+    decl  %ecx            # decrementa contador
+    jmp   fill_loop
     
 fill_done:
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-# Função: Ordenar array por quantidade (bubble sort)
+//------------------------------------------------------------------------------
+// Função: sort_by_quantity
+// Bubble sort simples: ordena array de nós por campo quantidade.
+// Parâmetros: [EBP+8]=endereço do array, [EBP+12]=número de nós.
+//------------------------------------------------------------------------------
 sort_by_quantity:
     pushl %ebp
     movl %esp, %ebp
@@ -918,285 +1093,288 @@ sort_by_quantity:
     pushl %edi
     pushl %edx
     
-    movl 8(%ebp), %esi      # Array
-    movl 12(%ebp), %ecx     # n
-    decl %ecx               # n-1
-    jle sort_done           # Se n <= 1, não precisa ordenar
-    
-    xorl %edi, %edi         # i = 0
+    movl  8(%ebp), %esi           # ESI = base do array
+    movl  12(%ebp), %ecx          # ECX = n
+    decl  %ecx                    # n-1 passa a ser limite
+    jle   sort_done               # Se n <= 1, não precisa ordenar
+
+    xorl  %edi, %edi              # i = 0
     
 outer_loop:
-    cmpl %ecx, %edi
-    jge sort_done
-    
-    movl %ecx, %edx         # j_limite = n-1-i
-    subl %edi, %edx
-    
-    xorl %ebx, %ebx         # j = 0
+    cmpl  %ecx, %edi              # i < n - 1 ?
+    jge   sort_done
+    movl  %ecx, %edx              # j_limite = n-1
+    subl  %edi, %edx              # j_limite -= i
+    xorl  %ebx, %ebx              # j = 0
     
 inner_loop:
-    cmpl %edx, %ebx
-    jge inner_done
+    cmpl  %edx, %ebx              # j < j_limite?
+    jge   inner_done
     
     # Carregar ponteiros
-    movl (%esi, %ebx, 4), %eax  # node[j]
-    movl 4(%esi, %ebx, 4), %ecx # node[j+1]
+    movl  (%esi, %ebx, 4), %eax   # node[j]
+    movl  4(%esi, %ebx, 4), %ecx  # node[j+1]
     
     # Comparar quantidades
-    movl 8(%eax), %eax      # quantidade[j]
-    movl 8(%ecx), %ecx      # quantidade[j+1]
+    movl  8(%eax), %eax           # quantidade[j]
+    movl  8(%ecx), %ecx           # quantidade[j+1]
     
-    cmpl %ecx, %eax
-    jge no_swap
+    cmpl  %ecx, %eax
+    jge   no_swap
     
     # Trocar ponteiros
-    movl (%esi, %ebx, 4), %eax
-    movl 4(%esi, %ebx, 4), %ecx
-    movl %ecx, (%esi, %ebx, 4)
-    movl %eax, 4(%esi, %ebx, 4)
+    movl  (%esi, %ebx, 4), %eax
+    movl  4(%esi, %ebx, 4), %ecx
+    movl  %ecx, (%esi, %ebx, 4)
+    movl  %eax, 4(%esi, %ebx, 4)
     
 no_swap:
-    incl %ebx
-    movl 12(%ebp), %ecx     # Restaurar ecx (n original)
-    decl %ecx               # n-1
-    jmp inner_loop
+    incl  %ebx
+    movl  12(%ebp), %ecx          # Restaurar ecx (n original)
+    decl  %ecx                    # n-1
+    jmp   inner_loop
     
 inner_done:
-    incl %edi
-    jmp outer_loop
+    incl  %edi
+    jmp   outer_loop
     
 sort_done:
-    popl %edx
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-# =============================================
-# FUNÇÃO: ORDENAR POR DATA
-# =============================================
-
-# Função auxiliar: Comparar datas de dois nós
-# Entrada: dois ponteiros para nós
-# Saída: eax = -1 se nó1 < nó2, 0 se igual, 1 se nó1 > nó2
+//------------------------------------------------------------------------------
+// Função: compare_nodes_by_date
+// Compara datas de validade de dois nós.
+// Parâmetros: [EBP+8]=nó1, [EBP+12]=nó2.
+// Retorno: EAX = -1 se nó1 antes, 0 se igual, +1 se depois.
+//------------------------------------------------------------------------------
 compare_nodes_by_date:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
 
-    movl 8(%ebp), %eax   # nó1
-    movl 12(%ebp), %ecx  # nó2
+    movl  8(%ebp), %eax    # nó1
+    movl  12(%ebp), %ecx   # nó2
 
     # Extrair data do nó1
-    movl 90(%eax), %edx   # dia1
-    movl 94(%eax), %ebx   # mes1
-    movl 98(%eax), %esi   # ano1
+    movl  90(%eax), %edx   # dia1
+    movl  94(%eax), %ebx   # mes1
+    movl  98(%eax), %esi   # ano1
 
     # Extrair data do nó2
-    movl 90(%ecx), %edi   # dia2
-    movl 94(%ecx), %eax   # mes2
-    movl 98(%ecx), %ecx   # ano2
+    movl  90(%ecx), %edi   # dia2
+    movl  94(%ecx), %eax   # mes2
+    movl  98(%ecx), %ecx   # ano2
 
     # Comparar anos
-    cmpl %ecx, %esi
-    jl node_date_less
-    jg node_date_greater
+    cmpl  %ecx, %esi
+    jl    node_date_less
+    jg    node_date_greater
     # Anos iguais, comparar meses
-    cmpl %eax, %ebx
-    jl node_date_less
-    jg node_date_greater
+    cmpl  %eax, %ebx
+    jl    node_date_less
+    jg    node_date_greater
     # Meses iguais, comparar dias
-    cmpl %edi, %edx
-    jl node_date_less
-    jg node_date_greater
+    cmpl  %edi, %edx
+    jl    node_date_less
+    jg    node_date_greater
     # Datas iguais
-    xorl %eax, %eax
-    jmp compare_done
+    xorl  %eax, %eax
+    jmp   compare_done
 
 node_date_less:
-    movl $-1, %eax
-    jmp compare_done
+    movl  $-1, %eax
+    jmp   compare_done
 
 node_date_greater:
-    movl $1, %eax
+    movl  $1, %eax
 
 compare_done:
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-# Função de ordenação por data (bubble sort)
+//------------------------------------------------------------------------------
+// Função: sort_by_date
+// Bubble sort por data usando compare_nodes_by_date.
+// Parâmetros: [EBP+8]=array, [EBP+12]=nós.
+//------------------------------------------------------------------------------
 sort_by_date:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
     pushl %edx
 
-    movl 8(%ebp), %esi      # Array
-    movl 12(%ebp), %ecx     # n
-    decl %ecx               # n-1
-    jle sort_date_done      # Se n <= 1, não precisa ordenar
+    movl  8(%ebp), %esi      # Array
+    movl  12(%ebp), %ecx     # n
+    decl  %ecx               # n-1
+    jle   sort_date_done     # Se n <= 1, não precisa ordenar
 
-    xorl %edi, %edi         # i = 0
+    xorl %edi, %edi          # i = 0
 
 outer_loop_date:
-    cmpl %ecx, %edi
-    jge sort_date_done
+    cmpl  %ecx, %edi
+    jge   sort_date_done
 
-    movl %ecx, %edx         # j_limite = n-1-i
-    subl %edi, %edx
+    movl  %ecx, %edx         # j_limite = n-1-i
+    subl  %edi, %edx
 
-    xorl %ebx, %ebx         # j = 0
+    xorl  %ebx, %ebx         # j = 0
 
 inner_loop_date:
-    cmpl %edx, %ebx
-    jge inner_done_date
+    cmpl  %edx, %ebx
+    jge   inner_done_date
 
     # Carregar ponteiros
-    movl (%esi, %ebx, 4), %eax  # node[j]
-    movl 4(%esi, %ebx, 4), %ecx # node[j+1]
+    movl  (%esi, %ebx, 4), %eax  # node[j]
+    movl  4(%esi, %ebx, 4), %ecx # node[j+1]
 
     # Comparar datas
     pushl %ecx
     pushl %eax
-    call compare_nodes_by_date
-    addl $8, %esp
+    call  compare_nodes_by_date
+    addl  $8, %esp
 
     # Se data[j] > data[j+1] (mais recente), trocar
-    cmpl $1, %eax
-    je swap_date
+    cmpl  $1, %eax
+    je    swap_date
 
-    jmp no_swap_date
+    jmp   no_swap_date
 
 swap_date:
     # Trocar ponteiros
-    movl (%esi, %ebx, 4), %eax
-    movl 4(%esi, %ebx, 4), %ecx
-    movl %ecx, (%esi, %ebx, 4)
-    movl %eax, 4(%esi, %ebx, 4)
+    movl  (%esi, %ebx, 4), %eax
+    movl  4(%esi, %ebx, 4), %ecx
+    movl  %ecx, (%esi, %ebx, 4)
+    movl  %eax, 4(%esi, %ebx, 4)
 
 no_swap_date:
-    incl %ebx
-    movl 12(%ebp), %edx     # Restaurar ecx (n original)
-    subl %edi, %edx
-    decl %edx               # n-1
-    jmp inner_loop_date
+    incl  %ebx
+    movl  12(%ebp), %edx     # Restaurar ecx (n original)
+    subl  %edi, %edx
+    decl  %edx               # n-1
+    jmp   inner_loop_date
 
 inner_done_date:
-    incl %edi
-    jmp outer_loop_date
+    incl  %edi
+    jmp   outer_loop_date
 
 sort_date_done:
-    popl %edx
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-# =============================================
-# FUNÇÃO: IMPRIMIR PRODUTO EM ARQUIVO
-# =============================================
+//------------------------------------------------------------------------------
+// Função: print_product_to_file
+// Grava os campos de um nó no arquivo texto via fprintf.
+// Parâmetros: [EBP+8]=nó, [EBP+12]=file handle.
+//------------------------------------------------------------------------------
 print_product_to_file:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
 
-    movl 8(%ebp), %ebx   # nó
-    movl 12(%ebp), %edi  # file handle
+    movl  8(%ebp), %ebx   # EBX = nó
+    movl  12(%ebp), %edi  # EDI = file handle
 
     # Escrever nome
-    leal 20(%ebx), %eax
+    leal  20(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
     pushl %edi
-    call fprintf
-    addl $12, %esp
+    call  fprintf
+    addl  $12, %esp
     
     # Escrever lote
-    leal 70(%ebx), %eax
+    leal  70(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
     pushl %edi
-    call fprintf
-    addl $12, %esp
+    call  fprintf
+    addl  $12, %esp
     
     # Escrever tipo
-    movl 4(%ebx), %eax
-    decl %eax
-    movl tipos_ptr(,%eax,4), %ecx  # Carrega ponteiro para a string
+    movl  4(%ebx), %eax
+    decl  %eax
+    movl  tipos_ptr(,%eax,4), %ecx  # Carrega ponteiro para a string
     pushl %ecx
     pushl $fmt_tipo_str
     pushl %edi
-    call fprintf
-    addl $12, %esp
+    call  fprintf
+    addl  $12, %esp
     
     # Escrever data
-    movl 98(%ebx), %eax
-    movl 94(%ebx), %ecx
-    movl 90(%ebx), %edx
+    movl  98(%ebx), %eax
+    movl  94(%ebx), %ecx
+    movl  90(%ebx), %edx
     pushl %eax
     pushl %ecx
     pushl %edx
     pushl $fmt_data
     pushl %edi
-    call fprintf
-    addl $20, %esp
+    call  fprintf
+    addl  $20, %esp
     
     # Escrever fornecedor
-    leal 102(%ebx), %eax
+    leal  102(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
     pushl %edi
-    call fprintf
-    addl $12, %esp
+    call  fprintf
+    addl  $12, %esp
     
     # Escrever quantidade
-    movl 8(%ebx), %eax
+    movl  8(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
     pushl %edi
-    call fprintf
-    addl $12, %esp
+    call  fprintf
+    addl  $12, %esp
     
     # Escrever valor de compra
-    movl 12(%ebx), %eax
-    xorl %edx, %edx
-    movl $100, %ecx
-    divl %ecx
+    movl  12(%ebx), %eax
+    xorl  %edx, %edx
+    movl  $100, %ecx
+    divl  %ecx
     pushl %edx
     pushl %eax
     pushl $fmt_compra
     pushl %edi
-    call fprintf
-    addl $16, %esp
+    call  fprintf
+    addl  $16, %esp
     
     # Escrever valor de venda
-    movl 16(%ebx), %eax
-    xorl %edx, %edx
-    movl $100, %ecx
-    divl %ecx
+    movl  16(%ebx), %eax
+    xorl  %edx, %edx
+    movl  $100, %ecx
+    divl  %ecx
     pushl %edx
     pushl %eax
     pushl $fmt_venda
     pushl %edi
-    call fprintf
-    addl $16, %esp
+    call  fprintf
+    addl  $16, %esp
     
     # Escrever divisor
     pushl $fmt_div
     pushl %edi
-    call fprintf
-    addl $8, %esp
+    call  fprintf
+    addl  $8, %esp
 
     popl %edi
     popl %esi
@@ -1204,12 +1382,14 @@ print_product_to_file:
     leave
     ret
 
-# =============================================
-# FUNÇÃO GERAR RELATÓRIO
-# =============================================
+//------------------------------------------------------------------------------
+// Função: generate_report
+// Coordena contagem, ordenação e escrita do relatório em “relatorio.txt”.
+// Usa malloc para criar array se necessário e free ao fim.
+//------------------------------------------------------------------------------
 generate_report:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
@@ -1218,87 +1398,87 @@ generate_report:
     # Abrir arquivo de relatório
     pushl $modo_escrita_txt
     pushl $report_filename
-    call fopen
-    addl $8, %esp
-    movl %eax, %edi        # EDI = file handle
+    call  fopen
+    addl  $8,   %esp
+    movl  %eax, %edi        # EDI = file handle
     
     testl %edi, %edi
     jz generate_report_fail
 
     # Perguntar tipo de ordenação
     pushl $str_report_order_prompt
-    call printf
-    addl $4, %esp
-    call read_int
+    call  printf
+    addl  $4, %esp
+    call  read_int
     
-    cmpl $2, %eax
-    je quantity_order
-    cmpl $3, %eax
-    je date_order
+    cmpl  $2, %eax
+    je    quantity_order
+    cmpl  $3, %eax
+    je    date_order
     
     # Ordenação padrão (por nome)
-    movl head, %esi        # ESI = current node
-    jmp report_loop
+    movl  head, %esi        # ESI = current node
+    jmp   report_loop
     
 quantity_order:
     # Ordenar por quantidade
-    call count_nodes
-    movl %eax, node_count
+    call  count_nodes
+    movl  %eax, node_count
     testl %eax, %eax
-    jz close_report
+    jz    close_report
     
     # Alocar memória para array de ponteiros
-    movl %eax, %ecx
-    shll $2, %ecx          # n * 4 bytes
+    movl  %eax, %ecx
+    shll  $2, %ecx          # n * 4 bytes
     pushl %ecx
-    call malloc
-    addl $4, %esp
-    movl %eax, node_array
+    call  malloc
+    addl  $4, %esp
+    movl  %eax, node_array
     testl %eax, %eax
-    jz close_report
+    jz    close_report
     
     # Preencher array
     pushl node_count
     pushl %eax
-    call fill_node_array
-    addl $8, %esp
+    call  fill_node_array
+    addl  $8, %esp
     
     # Ordenar array por quantidade
     pushl node_count
     pushl node_array
-    call sort_by_quantity
-    addl $8, %esp
+    call  sort_by_quantity
+    addl  $8, %esp
     
-    jmp array_report_loop
+    jmp   array_report_loop
     
 date_order:
     # Ordenar por data de validade
-    call count_nodes
-    movl %eax, node_count
+    call  count_nodes
+    movl  %eax, node_count
     testl %eax, %eax
-    jz close_report
+    jz    close_report
     
     # Alocar memória para array de ponteiros
-    movl %eax, %ecx
-    shll $2, %ecx
+    movl  %eax, %ecx
+    shll  $2, %ecx
     pushl %ecx
-    call malloc
-    addl $4, %esp
-    movl %eax, node_array
+    call  malloc
+    addl  $4, %esp
+    movl  %eax, node_array
     testl %eax, %eax
-    jz close_report
+    jz    close_report
     
     # Preencher array
     pushl node_count
     pushl %eax
-    call fill_node_array
-    addl $8, %esp
+    call  fill_node_array
+    addl  $8, %esp
     
     # Ordenar array por data
     pushl node_count
     pushl node_array
-    call sort_by_date
-    addl $8, %esp
+    call  sort_by_date
+    addl  $8, %esp
     
 array_report_loop:
     # Imprimir usando array ordenado
@@ -1307,212 +1487,246 @@ array_report_loop:
     
 array_report_loop_inner:
     testl %ecx, %ecx
-    jz array_report_done
+    jz    array_report_done
     
-    movl (%ebx), %eax      # Carregar nó
+    movl  (%ebx), %eax      # Carregar nó
     
     # Escrever nó no arquivo
     pushl %ecx
     pushl %edi             # file handle
     pushl %eax             # nó
-    call print_product_to_file
-    addl $8, %esp
-    popl %ecx
+    call  print_product_to_file
+    addl  $8, %esp
+    popl  %ecx
     
-    addl $4, %ebx
-    decl %ecx
-    jmp array_report_loop_inner
+    addl  $4, %ebx
+    decl  %ecx
+    jmp   array_report_loop_inner
     
 array_report_done:
     # Liberar array
     pushl node_array
-    call free
-    addl $4, %esp
-    jmp close_report
+    call  free
+    addl  $4, %esp
+    jmp   close_report
     
 report_loop:
     testl %esi, %esi
-    jz close_report
+    jz    close_report
     
     # Escrever nó no arquivo
     pushl %edi             # file handle
     pushl %esi             # nó
-    call print_product_to_file
-    addl $8, %esp
+    call  print_product_to_file
+    addl  $8, %esp
 
-    movl (%esi), %esi      # Avançar para próximo nó
-    jmp report_loop
+    movl  (%esi), %esi      # Avançar para próximo nó
+    jmp   report_loop
     
 close_report:
     # Fechar arquivo
     pushl %edi
-    call fclose
-    addl $4, %esp
+    call  fclose
+    addl  $4, %esp
     
     pushl $str_report_success
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
     
-    jmp generate_report_done
+    jmp   generate_report_done
 
 generate_report_fail:
     pushl $str_report_fail
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
 
 generate_report_done:
-    popl %edx
-    popl %edi
-    popl %esi
-    popl %ebx
+    popl  %edx
+    popl  %edi
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-/*----------------------------------------------------------------------------------------|
-| SEÇÃO: OPERAÇÕES FINANCEIRAS                                                            |
-| total_compra, total_venda, lucro_total, capital_perdido, print_currency, finance_menu   |
+/*-----------------------------------------------------------------------------------------|
+|                                                                                          |
+| SEÇÃO: OPERAÇÕES FINANCEIRAS                                                             |
+| Funções: total_compra, total_venda, lucro_total, capital_perdido, print_currency,        |
+|          finance_menu                                                                    |
+|                                                                                          |
 |-----------------------------------------------------------------------------------------*/
     .globl total_compra, total_venda, lucro_total, capital_perdido
     .globl print_currency, finance_menu
+
+//------------------------------------------------------------------------------
+// Função: total_compra
+// Calcula o total gasto em compras (quantidade * valor_compra) para cada nó.
+// Entrada: head -> lista ligada de produtos
+// Saída: EAX = total em centavos
+//------------------------------------------------------------------------------
 total_compra:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
-    movl head, %ebx
-    xorl %esi, %esi
+    movl  head, %ebx
+    xorl  %esi, %esi
 compra_loop:
     testl %ebx, %ebx
-    jz compra_done
-    movl 8(%ebx), %eax      # Quantidade
-    movl 12(%ebx), %edx     # Valor compra (centavos)
+    jz    compra_done
+    movl  8(%ebx), %eax      # Quantidade
+    movl  12(%ebx), %edx     # Valor compra (centavos)
     imull %edx, %eax        # quantidade * valor_compra
-    addl %eax, %esi         # Acumula
-    movl (%ebx), %ebx       # Próximo nó
-    jmp compra_loop
+    addl  %eax, %esi         # Acumula
+    movl  (%ebx), %ebx       # Próximo nó
+    jmp   compra_loop
 compra_done:
-    movl %esi, %eax         # Retorna total em EAX
-    popl %esi
-    popl %ebx
+    movl  %esi, %eax         # Retorna total em EAX
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: total_venda
+// Mesma lógica de total_compra, mas usando valor de venda.
+// Entrada: head -> lista ligada
+// Saída: EAX = total estimado de vendas em centavos
+//------------------------------------------------------------------------------
 total_venda:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
-    movl head, %ebx
-    xorl %esi, %esi
+    movl  head, %ebx
+    xorl  %esi, %esi
 venda_loop:
     testl %ebx, %ebx
-    jz venda_done
-    movl 8(%ebx), %eax      # Quantidade
-    movl 16(%ebx), %edx     # Valor venda (centavos)
+    jz    venda_done
+    movl  8(%ebx), %eax      # Quantidade
+    movl  16(%ebx), %edx     # Valor venda (centavos)
     imull %edx, %eax        # quantidade * valor_venda
-    addl %eax, %esi         # Acumula
-    movl (%ebx), %ebx       # Próximo nó
-    jmp venda_loop
+    addl  %eax, %esi         # Acumula
+    movl  (%ebx), %ebx       # Próximo nó
+    jmp   venda_loop
 venda_done:
-    movl %esi, %eax         # Retorna total em EAX
-    popl %esi
-    popl %ebx
+    movl  %esi, %eax         # Retorna total em EAX
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: lucro_total
+// Calcula lucro = total_venda – total_compra.
+// Entrada: nenhuma (usa chamadas internas)
+// Saída: EAX = lucro em centavos
+//------------------------------------------------------------------------------
 lucro_total:
     pushl %ebp
-    movl %esp, %ebp
-    call total_venda
+    movl  %esp, %ebp
+    call  total_venda
     pushl %eax
-    call total_compra
-    popl %edx
-    subl %eax, %edx         # Lucro = venda - compra
-    movl %edx, %eax         # Retorna lucro em EAX
+    call  total_compra
+    popl  %edx
+    subl  %eax, %edx         # Lucro = venda - compra
+    movl  %edx, %eax         # Retorna lucro em EAX
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: compare_dates
+// Compara (dia, mês, ano) de produto vs. data atual.
+// Parâmetros empilhados (do topo): dia_prod, mes_prod, ano_prod, dia_atual, mes_atual, ano_atual
+// Retorno: EAX = -1 (vencido), 0 (igual), +1 (não vencido)
+//------------------------------------------------------------------------------
 compare_dates:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     
-    movl 16(%ebp), %eax     # ano_prod
-    cmpl 28(%ebp), %eax     # Compara com ano_atual
-    jl date_less
-    jg date_greater
+    movl  16(%ebp), %eax     # ano_prod
+    cmpl  28(%ebp), %eax     # Compara com ano_atual
+    jl    date_less
+    jg    date_greater
     
-    movl 12(%ebp), %eax     # mes_prod
-    cmpl 24(%ebp), %eax     # Compara com mes_atual
-    jl date_less
-    jg date_greater
+    movl  12(%ebp), %eax     # mes_prod
+    cmpl  24(%ebp), %eax     # Compara com mes_atual
+    jl    date_less
+    jg    date_greater
     
-    movl 8(%ebp), %eax      # dia_prod
-    cmpl 20(%ebp), %eax     # Compara com dia_atual
-    jl date_less
-    jg date_greater
+    movl  8(%ebp), %eax      # dia_prod
+    cmpl  20(%ebp), %eax     # Compara com dia_atual
+    jl    date_less
+    jg    date_greater
     
-    xorl %eax, %eax        # Datas iguais
-    jmp date_done
+    xorl  %eax, %eax         # Datas iguais
+    jmp   date_done
 
 date_less:
-    movl $-1, %eax
-    jmp date_done
+    movl  $-1, %eax
+    jmp   date_done
 
 date_greater:
-    movl $1, %eax
+    movl  $1, %eax
 
 date_done:
     leave
     ret
     
+//------------------------------------------------------------------------------
+// Função: capital_perdido
+// Percorre lista e soma perdas de produtos vencidos.
+// Lê data atual interactively nos buffers dia_atual, mes_atual, ano_atual.
+// Saída: EAX = perda total em centavos.
+//------------------------------------------------------------------------------
 capital_perdido:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     
     # Pedir data atual ao usuário
     pushl $str_dia_atual
-    call printf
-    addl $4, %esp
-    leal dia_atual, %eax
+    call  printf
+    addl  $4, %esp
+    leal  dia_atual, %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
     
     pushl $str_mes_atual
-    call printf
-    addl $4, %esp
-    leal mes_atual, %eax
+    call  printf
+    addl  $4, %esp
+    leal  mes_atual, %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
     
     pushl $str_ano_atual
-    call printf
-    addl $4, %esp
-    leal ano_atual, %eax
+    call  printf
+    addl  $4, %esp
+    leal  ano_atual, %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
     
-    movl head, %ebx
-    xorl %esi, %esi        # Acumulador = 0
+    movl  head, %ebx
+    xorl  %esi, %esi        # Acumulador = 0
 
 capital_loop:
     testl %ebx, %ebx
-    jz capital_done
+    jz    capital_done
     
     # Carregar data do produto
-    movl 90(%ebx), %eax    # dia_prod
-    movl 94(%ebx), %ecx    # mes_prod
-    movl 98(%ebx), %edx    # ano_prod
+    movl  90(%ebx), %eax    # dia_prod
+    movl  94(%ebx), %ecx    # mes_prod
+    movl  98(%ebx), %edx    # ano_prod
     
     # Empilhar parâmetros para compare_dates
     pushl ano_atual
@@ -1521,74 +1735,81 @@ capital_loop:
     pushl %edx             # ano_prod
     pushl %ecx             # mes_prod
     pushl %eax             # dia_prod
-    call compare_dates
-    addl $24, %esp         # Limpar parâmetros
+    call  compare_dates
+    addl  $24, %esp         # Limpar parâmetros
     
     # Se data produto < data atual (vencido)
-    cmpl $-1, %eax
-    jne next_capital
+    cmpl  $-1, %eax
+    jne   next_capital
     
     # Calcular perda: quantidade * valor_compra
-    movl 8(%ebx), %eax     # quantidade
-    movl 12(%ebx), %edx    # valor_compra
+    movl  8(%ebx), %eax     # quantidade
+    movl  12(%ebx), %edx    # valor_compra
     imull %edx, %eax
-    addl %eax, %esi        # Acumula perda
+    addl  %eax, %esi        # Acumula perda
 
 next_capital:
-    movl (%ebx), %ebx      # Próximo nó
-    jmp capital_loop
+    movl  (%ebx), %ebx      # Próximo nó
+    jmp   capital_loop
 
 capital_done:
-    movl %esi, %eax        # Retorna perda total em EAX
-    popl %esi
-    popl %ebx
+    movl  %esi, %eax        # Retorna perda total em EAX
+    popl  %esi
+    popl  %ebx
     leave
     ret
 
-# Função print_currency
-# Entrada: valor em centavos (EAX), endereço do formato (EBX)
+//------------------------------------------------------------------------------
+// Função: print_currency
+// Converte centavos em reais e centavos e chama printf com formato em EBX.
+// Entradas: EAX=total_centavos, [EBP+8]=endereço do formato
+//------------------------------------------------------------------------------
 print_currency:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     
     # Dividir valor por 100 para obter reais e centavos
-    xorl %edx, %edx
-    movl $100, %ecx
-    divl %ecx              # EAX = reais, EDX = centavos
+    xorl  %edx, %edx
+    movl  $100, %ecx
+    divl  %ecx              # EAX = reais, EDX = centavos
     
     # Empilhar para printf: formato, reais, centavos
     pushl %edx             # centavos
     pushl %eax             # reais
     pushl 8(%ebp)          # formato
-    call printf
-    addl $12, %esp
+    call  printf
+    addl  $12, %esp
     
     leave
     ret
 
+//------------------------------------------------------------------------------
+// Função: finance_menu
+// Exibe submenu financeiro e roteia para as operações acima.
+//------------------------------------------------------------------------------  
 finance_menu:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
 
 finance_loop:
     # Exibir menu financeiro
     pushl $menu_financeiro
-    call printf
-    addl $4, %esp
+    call  printf
+    addl  $4, %esp
     
     # Ler escolha
-    call read_int
+    call  read_int
     
-    cmpl $1, %eax
-    je fm_total_compra
-    cmpl $2, %eax
-    je fm_total_venda
-    cmpl $3, %eax
-    je fm_lucro
-    cmpl $4, %eax
-    je fm_capital_perdido
-    cmpl $5, %eax
-    je fm_done
+    cmpl  $1, %eax
+    je    fm_total_compra
+    cmpl  $2, %eax
+    je    fm_total_venda
+    cmpl  $3, %eax
+    je    fm_lucro
+    cmpl  $4, %eax
+    je    fm_capital_perdido
+    cmpl  $5, %eax
+    je    fm_done
     
     # Opção inválida
     pushl $str_invalido
@@ -1597,116 +1818,116 @@ finance_loop:
     jmp finance_loop
 
 fm_total_compra:
-    call total_compra
+    call  total_compra
     pushl $fmt_total_compra
-    call print_currency
-    addl $4, %esp
-    jmp finance_loop
+    call  print_currency
+    addl  $4, %esp
+    jmp   finance_loop
 
 fm_total_venda:
-    call total_venda
+    call  total_venda
     pushl $fmt_total_venda
-    call print_currency
-    addl $4, %esp
-    jmp finance_loop
+    call  print_currency
+    addl  $4, %esp
+    jmp   finance_loop
 
 fm_lucro:
-    call lucro_total
+    call  lucro_total
     pushl $fmt_lucro
-    call print_currency
-    addl $4, %esp
-    jmp finance_loop
+    call  print_currency
+    addl  $4, %esp
+    jmp   finance_loop
 
 fm_capital_perdido:
-    call capital_perdido
+    call  capital_perdido
     pushl $fmt_capital_perdido
-    call print_currency
-    addl $4, %esp
-    jmp finance_loop
+    call  print_currency
+    addl  $4, %esp
+    jmp   finance_loop
 
 fm_done:
     leave
     ret
 
-/*===============================================================================================
-|                                                                                                |
-|                                            MAIN                                                |
-|                                                                                                |
-|  -> main, opções do menu principal e syscall de saída                                          |
+/*==============================================================================================|
+|                                                                                               |
+|                                            MAIN                                               |
+|                                                                                               |
+|  -> main, opções do menu principal e syscall de saída                                         |
 ===============================================================================================*/
     .globl main
 main:
-    call load_list
+    call  load_list
 
 menu_loop:
-    call display_menu
+    call  display_menu
     
-    cmpl $1, %eax
-    je opcao1
-    cmpl $2, %eax
-    je opcao2
-    cmpl $3, %eax
-    je opcao3
-    cmpl $4, %eax
-    je opcao4
-    cmpl $5, %eax
-    je opcao5
-    cmpl $6, %eax
-    je opcao6
-    cmpl $7, %eax
-    je opcao7
+    cmpl  $1, %eax
+    je    opcao1
+    cmpl  $2, %eax
+    je    opcao2
+    cmpl  $3, %eax
+    je    opcao3
+    cmpl  $4, %eax
+    je    opcao4
+    cmpl  $5, %eax
+    je    opcao5
+    cmpl  $6, %eax
+    je    opcao6
+    cmpl  $7, %eax
+    je    opcao7
     
     pushl $str_invalido
-    call printf
-    addl $4, %esp
-    jmp menu_loop
+    call  printf
+    addl  $4, %esp
+    jmp   menu_loop
 
 opcao1:
-    call add_product_interactive
-    jmp menu_loop
+    call  add_product_interactive
+    jmp   menu_loop
 
 opcao2:
-    call search_product_interactive
-    jmp menu_loop
+    call  search_product_interactive
+    jmp   menu_loop
 
 opcao3:
-    call remove_product_interactive
-    jmp menu_loop
+    call  remove_product_interactive
+    jmp   menu_loop
 
 opcao4:
-    call update_product_interactive
-    jmp menu_loop
+    call  update_product_interactive
+    jmp   menu_loop
 
 opcao5:
-    call finance_menu
-    jmp menu_loop
+    call  finance_menu
+    jmp   menu_loop
 
 opcao6:
-    call generate_report
-    jmp menu_loop
+    call  generate_report
+    jmp   menu_loop
 
 opcao7:
     pushl $str_saindo
-    call printf
-    addl $4, %esp
-    call save_list
-    movl $1, %eax
-    xorl %ebx, %ebx
-    int $0x80
+    call  printf
+    addl  $4, %esp
+    call  save_list
+    movl  $1, %eax
+    xorl  %ebx, %ebx
+    int   $0x80
 
 memcpy:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %esi
     pushl %edi
     pushl %ecx
-    movl 8(%ebp), %edi
-    movl 12(%ebp), %esi
-    movl 16(%ebp), %ecx
+    movl  8(%ebp), %edi
+    movl  12(%ebp), %esi
+    movl  16(%ebp), %ecx
     cld
-    rep movsb
-    popl %ecx
-    popl %edi
-    popl %esi
+    rep   movsb
+    popl  %ecx
+    popl  %edi
+    popl  %esi
     leave
     ret
