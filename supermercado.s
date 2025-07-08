@@ -1,74 +1,103 @@
 .section .note.GNU-stack,"",@progbits
 
+/*===============================================================================================
+|                                                                                                |
+|                  SUPERMERCADO.S  –  Gerenciamento de produtos em lista ligada                  |
+|                                                                                                |
+|  Seções:                                                                                       |
+|    .data – Strings, formatos, menus e tabelas estáticas                                        |
+|    .bss  – Buffers e variáveis não inicializadas (estado)                                      |
+|    .text – Código executável (funções e main)                                                  |
+|                                                                                                |
+|  Principais Funções:                                                                           |
+|    load_list               – carrega lista do arquivo binário (produtos.bin)                   |
+|    save_list               – persiste lista em arquivo binário                                 |
+|    add_product_interactive – adiciona produto lendo do terminal                                |
+|    search/remove/update    – operações CRUD via interface interativa                           |
+|    finance_menu            – submenu financeiro (total compra, venda, lucro, capital perdido)  |
+|    generate_report         – gera relatório texto (ordenado ou padrão)                         |
+|    utilitários             – read_int, read_string_with_prompt, remove_newline, memcpy         |
+|                                                                                                |
+===============================================================================================*/
+
+
+
+
+/*===============================================================================================
+|                                                                                                |
+|                Seção .data – Strings, formatos, menus e tabela de tipos                        |
+|                                                                                                |
+===============================================================================================*/
+
 .section .data
     //=== Lista e arquivos ===
     head: .int 0
-    filename: .asciz "produtos.bin"
-    report_filename: .asciz "relatorio.txt"
-    modo_escrita: .asciz "wb"
-    modo_leitura: .asciz "rb"
+    filename:         .asciz "produtos.bin"
+    report_filename:  .asciz "relatorio.txt"
+    modo_escrita:     .asciz "wb"
+    modo_leitura:     .asciz "rb"
     modo_escrita_txt: .asciz "w"
     
     //=== Templates de formatação genéricos ===
-    fmt_nome: .asciz "Nome: %s\n"
-    fmt_lote: .asciz "Lote: %s\n"
-    fmt_tipo: .asciz "Tipo: %d\n"
-    fmt_data: .asciz "Validade: %02d/%02d/%04d\n"
+    fmt_nome:   .asciz "Nome: %s\n"
+    fmt_lote:   .asciz "Lote: %s\n"
+    fmt_tipo:   .asciz "Tipo: %d\n"
+    fmt_data:   .asciz "Validade: %02d/%02d/%04d\n"
     fmt_fornec: .asciz "Fornecedor: %s\n"
-    fmt_quant: .asciz "Quantidade: %d\n"
+    fmt_quant:  .asciz "Quantidade: %d\n"
     fmt_compra: .asciz "Compra: %d.%02d\n"
-    fmt_venda: .asciz "Venda: %d.%02d\n"
-    fmt_div: .asciz "----------------\n"
+    fmt_venda:  .asciz "Venda: %d.%02d\n"
+    fmt_div:    .asciz "----------------\n"
 
     //=== Menu principal ===
-    menu: .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Gerar relatório\n7. Sair\nEscolha: "
+    menu:        .asciz "\n===== MENU =====\n1. Adicionar produto\n2. Buscar produto\n3. Remover produto\n4. Atualizar produto\n5. Consultas Financeiras\n6. Gerar relatório\n7. Sair\nEscolha: "
     str_escolha: .asciz "%d"
 
     //=== Prompts de entrada interativa ===
-    str_nome_prompt: .asciz "Digite o nome do produto: "
-    str_lote_prompt: .asciz "Digite o lote: "
-    str_tipo_prompt: .asciz "Tipos:\n 01. Alimento\n 02. Limpeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hortifruti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
-    str_dia_prompt: .asciz "Digite o dia da validade: "
-    str_mes_prompt: .asciz "Digite o mês da validade: "
-    str_ano_prompt: .asciz "Digite o ano da validade: "
-    str_fornec_prompt: .asciz "Digite o fornecedor: "
-    str_quant_prompt: .asciz "Digite a quantidade: "
-    str_compra_prompt: .asciz "Digite o valor de compra (centavos): "
-    str_venda_prompt: .asciz "Digite o valor de venda (centavos): "
-    str_busca_prompt: .asciz "Digite o nome para buscar: "
-    str_remove_prompt: .asciz "Digite o nome do produto a remover: "
-    str_remove_lote_prompt: .asciz "Digite o lote do produto a remover: "
-    str_update_prompt: .asciz "Digite o nome do produto a atualizar: "
-    str_update_lote_prompt: .asciz "Digite o lote do produto a atualizar: "
-    str_update_campo: .asciz "Qual campo deseja atualizar?\n1. Quantidade\n2. Valor de venda\nEscolha: "
-    str_nova_quant: .asciz "Digite a nova quantidade: "
-    str_nova_venda: .asciz "Digite o novo valor de venda (centavos): "
-    str_invalido: .asciz "Opção inválida!\n"
-    str_saindo: .asciz "Saindo...\n"
-    str_malloc_fail: .asciz "Falha ao alocar memoria!\n"
-    str_remove_success: .asciz "Produto removido com sucesso!\n"
-    str_remove_fail: .asciz "Produto não encontrado para remoção!\n"
-    str_update_success: .asciz "Produto atualizado com sucesso!\n"
-    str_update_fail: .asciz "Produto não encontrado para atualização!\n"
+    str_nome_prompt:           .asciz "Digite o nome do produto: "
+    str_lote_prompt:           .asciz "Digite o lote: "
+    str_tipo_prompt:           .asciz "Tipos:\n 01. Alimento\n 02. Limpeza\n 03. Utensílios\n 04. Bebidas\n 05. Frios\n 06. Padaria\n 07. Carnes\n 08. Higiene\n 09. Bebês\n 10. Pet\n 11. Congelados\n 12. Hortifruti\n 13. Eletronicos\n 14. Vestuário\n 15. Outros\nDigite o tipo (1-15): "
+    str_dia_prompt:            .asciz "Digite o dia da validade: "
+    str_mes_prompt:            .asciz "Digite o mês da validade: "
+    str_ano_prompt:            .asciz "Digite o ano da validade: "
+    str_fornec_prompt:         .asciz "Digite o fornecedor: "
+    str_quant_prompt:          .asciz "Digite a quantidade: "
+    str_compra_prompt:         .asciz "Digite o valor de compra (centavos): "
+    str_venda_prompt:          .asciz "Digite o valor de venda (centavos): "
+    str_busca_prompt:          .asciz "Digite o nome para buscar: "
+    str_remove_prompt:         .asciz "Digite o nome do produto a remover: "
+    str_remove_lote_prompt:    .asciz "Digite o lote do produto a remover: "
+    str_update_prompt:         .asciz "Digite o nome do produto a atualizar: "
+    str_update_lote_prompt:    .asciz "Digite o lote do produto a atualizar: "
+    str_update_campo:          .asciz "Qual campo deseja atualizar?\n1. Quantidade\n2. Valor de venda\nEscolha: "
+    str_nova_quant:            .asciz "Digite a nova quantidade: "
+    str_nova_venda:            .asciz "Digite o novo valor de venda (centavos): "
+    str_invalido:              .asciz "Opção inválida!\n"
+    str_saindo:                .asciz "Saindo...\n"
+    str_malloc_fail:           .asciz "Falha ao alocar memoria!\n"
+    str_remove_success:        .asciz "Produto removido com sucesso!\n"
+    str_remove_fail:           .asciz "Produto não encontrado para remoção!\n"
+    str_update_success:        .asciz "Produto atualizado com sucesso!\n"
+    str_update_fail:           .asciz "Produto não encontrado para atualização!\n"
     str_update_campo_invalido: .asciz "Campo inválido!\n"
 
     //=== Consultas financeiras ===
-    menu_financeiro: .asciz "\n===== CONSULTAS FINANCEIRAS =====\n1. Total de compra\n2. Total de venda\n3. Lucro total\n4. Capital perdido\n5. Voltar\nEscolha: "
-    fmt_total_compra: .asciz "Total gasto em compras: %d.%02d\n"
-    fmt_total_venda: .asciz "Total estimado de vendas: %d.%02d\n"
-    fmt_lucro: .asciz "Lucro estimado: %d.%02d\n"
+    menu_financeiro:     .asciz "\n===== CONSULTAS FINANCEIRAS =====\n1. Total de compra\n2. Total de venda\n3. Lucro total\n4. Capital perdido\n5. Voltar\nEscolha: "
+    fmt_total_compra:    .asciz "Total gasto em compras: %d.%02d\n"
+    fmt_total_venda:     .asciz "Total estimado de vendas: %d.%02d\n"
+    fmt_lucro:           .asciz "Lucro estimado: %d.%02d\n"
     fmt_capital_perdido: .asciz "Capital perdido: %d.%02d\n"
-    str_dia_atual: .asciz "Digite o dia atual: "
-    str_mes_atual: .asciz "Digite o mês atual: "
-    str_ano_atual: .asciz "Digite o ano atual: "
-    str_aguarde: .asciz "Calculando...\n"
+    str_dia_atual:       .asciz "Digite o dia atual: "
+    str_mes_atual:       .asciz "Digite o mês atual: "
+    str_ano_atual:       .asciz "Digite o ano atual: "
+    str_aguarde:         .asciz "Calculando...\n"
     
     //=== Mensagens de relatório ===
-    str_report_success: .asciz "Relatório gerado com sucesso em relatorio.txt\n"
-    str_report_fail: .asciz "Erro ao gerar relatório!\n"
-    str_report_order_prompt: .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\n3. Data de validade (mais antiga primeiro)\nEscolha: "
+    str_report_success:        .asciz "Relatório gerado com sucesso em relatorio.txt\n"
+    str_report_fail:           .asciz "Erro ao gerar relatório!\n"
+    str_report_order_prompt:   .asciz "Ordenar por:\n1. Nome (padrão)\n2. Quantidade em estoque\n3. Data de validade (mais antiga primeiro)\nEscolha: "
     str_report_order_invalido: .asciz "Opção inválida! Usando ordenação padrão.\n"
-    fmt_tipo_str: .asciz "Tipo: %s\n"
+    fmt_tipo_str:              .asciz "Tipo: %s\n"
 
     //=== Tipos de produto ===
     .align 4
@@ -105,29 +134,51 @@
     tipos_str13: .asciz "Vestuario"
     tipos_str14: .asciz "Outros"
 
-# Tamanho fixo da estrutura
-.set produto_size, 152
-.set dados_size, 148
+//=== Tamanho do nó ===
+.set dados_size, 148     #  | Nome (50) | Lote (20) | Tipo (4) | Dia (4) | Mês (4) | Ano (4) | Fornecedor (50) | Quantidade (4) | Compra (4) | Venda (4) | => 148 bytes
+.set produto_size, 152   #  dados_size + 4 bytes do próximo nó => 152 bytes
+
+
+
+
+/*===============================================================================================
+|                                                                                                |
+|                Seção .bss – Buffers e variáveis de estado (não inicializadas)                  |
+|                                                                                                |
+===============================================================================================*/
 
 .section .bss
-    .lcomm buffer, 148
-    .lcomm input_buffer, 50
-    .lcomm escolha, 4
-    .lcomm nome_busca, 50
-    .lcomm lote_busca, 20
-    .lcomm dia_atual, 4
-    .lcomm mes_atual, 4
-    .lcomm ano_atual, 4
-    .lcomm node_array, 4  # Ponteiro para array de nós
-    .lcomm node_count, 4  # Contador de nós
+    .lcomm buffer,    148    # buffer temporário para leitura/gravação de dados binários
+    .lcomm nome_busca, 50    # buffer para armazenar o nome em busca/remoção/atualização
+    .lcomm lote_busca, 20    # buffer para armazenar o lote em busca/remoção/atualização
+    .lcomm dia_atual,   4    # inteiro para dia atual (usado em capital perdido)
+    .lcomm mes_atual,   4    # inteiro para mês atual (usado em capital perdido)
+    .lcomm ano_atual,   4    # inteiro para ano atual (usado em capital perdido)
+    .lcomm node_array,  4    # ponteiro para array de nós na geração de relatório ordenado
+    .lcomm node_count,  4    # número de nós (tamanho de node_array)
+
+
+
+
+
+/*===============================================================================================
+|                                                                                                |
+|                            Seção .text – Funções executáveis                                   |
+|                                                                                                |
+===============================================================================================*/
 
 .section .text
-    .globl main
     .extern malloc, free, fopen, fclose, fread, fwrite, printf, strcmp, strcpy, scanf, fgets, stdin, getchar, strncmp, fprintf
 
+/* --------------------------------------------------------|
+| SEÇÃO: GERENCIAMENTO DA LISTA                            |
+| Funções de inserção, carregamento e gravação da lista    |
+|---------------------------------------------------------*/
+.section .text
+    .globl insert_sorted, save_list, load_list
 insert_sorted:
     pushl %ebp
-    movl %esp, %ebp
+    movl  %esp, %ebp
     pushl %ebx
     pushl %esi
     pushl %edi
@@ -292,6 +343,11 @@ load_done:
     leave
     ret
 
+/* --------------------------------------------------------|
+| Section: Product I/O                                     |
+| print_product, search_product, leitura interativa        |
+|---------------------------------------------------------*/
+    .globl print_product, search_product
 print_product:
     pushl %ebp
     movl %esp, %ebp
@@ -311,8 +367,8 @@ print_product:
     call printf
     addl $8, %esp
     
-    movl 4(%ebx), %eax       # pega o campo 'tipo' (1–15)
-    decl %eax                # ajusta para índice 0–14
+    movl 4(%ebx), %eax             # pega o campo 'tipo' (1–15)
+    decl %eax                      # ajusta para índice 0–14
     movl tipos_ptr(,%eax,4), %ecx  # carrega ponteiro para a string
     pushl %ecx
     pushl $fmt_tipo_str
@@ -474,6 +530,12 @@ rn_end:
     leave
     ret
 
+/* --------------------------------------------------------|
+| Section: Interactive CRUD Handlers                       |
+| add/search/remove/update product                         |
+|---------------------------------------------------------*/
+    .globl add_product_interactive, search_product_interactive
+    .globl remove_product_interactive, update_product_interactive
 add_product_interactive:
     pushl %ebp
     movl %esp, %ebp
@@ -496,23 +558,23 @@ add_product_interactive:
     call read_string_with_prompt
     addl $8, %esp
     pushl $str_tipo_prompt
-    call printf
-    addl $4, %esp
-    leal 4(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  4(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
     pushl $str_dia_prompt
-    call printf
-    addl $4, %esp
-    leal 90(%ebx), %eax
+    call  printf
+    addl  $4, %esp
+    leal  90(%ebx), %eax
     pushl %eax
     pushl $str_escolha
-    call scanf
-    addl $8, %esp
-    call clear_input_buffer
+    call  scanf
+    addl  $8, %esp
+    call  clear_input_buffer
     pushl $str_mes_prompt
     call printf
     addl $4, %esp
@@ -792,11 +854,12 @@ display_menu:
     leave
     ret
 
-# =============================================
-# FUNÇÕES AUXILIARES PARA RELATÓRIO ORDENADO
-# =============================================
-
-# Função: Contar nós na lista
+// ============================================
+// Section: Report Generation
+// count_nodes, fill_node_array, sorts, print_product_to_file, generate_report
+// ============================================
+    .globl count_nodes, fill_node_array
+    .globl sort_by_quantity, sort_by_date, print_product_to_file, generate_report
 count_nodes:
     pushl %ebp
     movl %esp, %ebp
@@ -911,7 +974,7 @@ sort_done:
     ret
 
 # =============================================
-# NOVA FUNÇÃO: Ordenar por data de validade
+# FUNÇÃO: ORDENAR POR DATA
 # =============================================
 
 # Função auxiliar: Comparar datas de dois nós
@@ -1142,7 +1205,7 @@ print_product_to_file:
     ret
 
 # =============================================
-# FUNÇÃO GERAR RELATÓRIO (COM ORDENAÇÃO POR DATA)
+# FUNÇÃO GERAR RELATÓRIO
 # =============================================
 generate_report:
     pushl %ebp
@@ -1305,10 +1368,12 @@ generate_report_done:
     leave
     ret
 
-# =============================================
-# FUNÇÕES DE CONSULTA FINANCEIRA
-# =============================================
-
+/*----------------------------------------------------------------------------------------|
+| SEÇÃO: OPERAÇÕES FINANCEIRAS                                                            |
+| total_compra, total_venda, lucro_total, capital_perdido, print_currency, finance_menu   |
+|-----------------------------------------------------------------------------------------*/
+    .globl total_compra, total_venda, lucro_total, capital_perdido
+    .globl print_currency, finance_menu
 total_compra:
     pushl %ebp
     movl %esp, %ebp
@@ -1563,10 +1628,13 @@ fm_done:
     leave
     ret
 
-# =============================================
-# MAIN
-# =============================================
-
+/*===============================================================================================
+|                                                                                                |
+|                                            MAIN                                                |
+|                                                                                                |
+|  -> main, opções do menu principal e syscall de saída                                          |
+===============================================================================================*/
+    .globl main
 main:
     call load_list
 
