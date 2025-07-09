@@ -866,10 +866,10 @@ remove_search_loop:
     testl %eax, %eax
     jz    found_to_remove
 next_remove_search:
-    movl %ebx, %esi
-    movl (%ebx), %ebx
-    jmp remove_search_loop
-found_to_remove:
+    movl  %ebx, %esi
+    movl  (%ebx), %ebx
+    jmp   remove_search_loop
+found_to_ remove:
     testl %esi, %esi
     jz    remove_first
     movl  (%ebx), %eax
