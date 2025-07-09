@@ -1,0 +1,252 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath}
+\usepackage[portuguese]{babel}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{geometry}
+  \geometry{
+    a4paper,
+    vmargin={25mm,25mm},
+    hmargin={25mm,25mm},
+    includehead,
+    head={15.5mm}
+  }
+\renewcommand{\figurename}{Figura}
+\renewcommand{\tablename}{Tabela}
+\setlength{\parindent}{1.5cm}
+\usepackage{indentfirst}
+\usepackage[indent=15mm]{parskip}
+\pagestyle{fancy}
+\fancyhead{}
+\fancyhead[r]{\includegraphics[width=25mm]{imagens/DIN_logo.png}}
+\fancyhead[C]{\textbf{UNIVERSIDADE ESTADUAL DE MARINGÁ\\CENTRO DE TECNOLOGIA\\DEPARTAMENTO DE INFORMÁTICA}}
+\fancyhead[l]{\includegraphics[width=25mm]{imagens/UEM_logo.png}}
+\renewcommand{\contentsname}{\centering SUMÁRIO}
+
+\begin{document}
+
+\include{capa}
+
+\tableofcontents
+\newpage
+
+\section{Visão Geral do Sistema}
+Este relatório detalha a implementação dO sistema de gerenciamento de produtos em Assembly 32 bits. O sistema utiliza uma lista encadeada para armazenar os produtos, com operações para adicionar, buscar, remover, atualizar, gerar relatórios e realizar consultas financeiras. O código é organizado em funções que manipulam a lista e interagem com o usuário via terminal.
+
+\section{Estrutura de Dados}
+A estrutura de um produto é definida com os seguintes campos:
+\begin{itemize}
+    \item \textbf{next}: ponteiro para o próximo nó (4 bytes)
+    \item \textbf{tipo}: inteiro (4 bytes)
+    \item \textbf{quantidade}: inteiro (4 bytes)
+    \item \textbf{valor\_compra}: inteiro (em centavos, 4 bytes)
+    \item \textbf{valor\_venda}: inteiro (em centavos, 4 bytes)
+    \item \textbf{nome}: string (50 bytes)
+    \item \textbf{lote}: string (20 bytes)
+    \item \textbf{dia}: inteiro (4 bytes)
+    \item \textbf{mês}: inteiro (4 bytes)
+    \item \textbf{ano}: inteiro (4 bytes)
+    \item \textbf{fornecedor}: string (50 bytes)
+\end{itemize}
+
+O tamanho total da estrutura é 152 bytes, sendo 4 bytes para o ponteiro e 148 bytes para os dados.
+
+A lista é acessada através de um ponteiro global \texttt{head} que aponta para o primeiro nó.
+
+\section{Registradores principais}
+    \begin{description}
+      \item[EAX] Acumulador / retorno de função / aritmética.
+      \item[EBX] Preservado por chamadas (\emph{callee-saved}), guarda ponteiros de nó, handle de arquivo, buffer, etc.
+      \item[ECX] Contador em loops, ou divisor em \texttt{divl}.
+      \item[EDX] Resto de divisão / auxiliares em formatação de moeda.
+      \item[ESI, EDI] Índices / preservados, usados para percorrer listas ou passar handles.
+      \item[EBP, ESP] Gerenciam o frame de pilha de cada função.
+    \end{description}
+
+\section{Adição de Produto}
+Função: \texttt{add\_product\_interactive}
+Esta função interage com o usuário para coletar os dados do produto, aloca memória para o novo nó e o insere na lista de forma ordenada pelo nome.
+\textbf{Registradores principais:}
+\begin{itemize}
+    \item \textbf{EAX}: usado para armazenar o endereço do novo nó alocado.
+    \item \textbf{EBX}: mantém o endereço do novo nó durante a coleta de dados.
+\end{itemize}
+\textbf{Fluxo:}
+\begin{enumerate}
+    \item Aloca memória para o novo produto (152 bytes) usando \texttt{malloc}.
+    \item Inicializa o ponteiro \texttt{next} do novo nó como NULL.
+    \item Lê os campos do produto (nome, lote, tipo, dia, mês, ano, fornecedor, quantidade, valor de compra, valor de venda) usando funções auxiliares (\texttt{read\_string\_with\_prompt}, \\ \texttt{printf}, \texttt{scanf}).
+    \item Chama \texttt{insert\_sorted} para inserir o nó na lista mantendo a ordem alfabética pelo nome.
+\end{enumerate}
+\textbf{Função \texttt{insert\_sorted}:}
+\begin{itemize}
+    \item \textbf{EBX}: contém o endereço do novo nó.
+    \item \textbf{EDI}: ponteiro atual na lista (começa em \texttt{head}).
+    \item \textbf{ESI}: ponteiro anterior (para inserção).
+    \item Compara o nome do novo nó com os nomes dos nós existentes usando \texttt{strcmp}.
+    \item Insere o nó na posição correta:
+        \begin{itemize}
+            \item Se a lista estiver vazia, \texttt{head} aponta para o novo nó.
+            \item Se o novo nó deve ser o primeiro, atualiza \texttt{head} e o ponteiro \texttt{next} do novo nó.
+            \item Caso contrário, insere no meio ou no final.
+        \end{itemize}
+\end{itemize}
+
+\section{Busca de Produto}
+Função: \texttt{search\_product\_interactive}
+
+Esta função lê um nome do usuário e percorre a lista imprimindo todos os produtos com nomes que coincidem.
+
+\textbf{Registradores principais:}
+\begin{itemize}
+    \item \textbf{EBX}: ponteiro para o nó atual durante a busca.
+    \item \textbf{EAX}: usado para chamadas de função e comparações.
+\end{itemize}
+
+\textbf{Fluxo:}
+\begin{enumerate}
+    \item Lê o nome a ser buscado.
+    \item Chama \texttt{search\_product} com o nome.
+    \item Em \texttt{search\_product}:
+        \begin{enumerate}
+            \item Inicia no \texttt{head}.
+            \item Para cada nó, compara o nome com o nome buscado usando \texttt{strcmp}.
+            \item Se coincidir, imprime o produto usando \texttt{print\_product}.
+            \item Avança para o próximo nó.
+        \end{enumerate}
+\end{enumerate}
+
+
+\section{Remoção de Produto}
+Função: \texttt{remove\_product\_interactive}
+
+Remove um produto específico baseado no nome e lote.
+
+\textbf{Registradores principais:}
+\begin{itemize}
+    \item \textbf{EBX}: ponteiro para o nó atual.
+    \item \textbf{ESI}: ponteiro para o nó anterior (para ajustar os ponteiros).
+\end{itemize}
+
+\textbf{Fluxo:}
+\begin{enumerate}
+    \item Lê o nome e o lote do produto a ser removido.
+    \item Percorre a lista:
+        \begin{enumerate}
+            \item Compara o nome e o lote do nó atual com os valores lidos.
+            \item Quando encontra, remove o nó:
+                \begin{itemize}
+                    \item Se for o primeiro nó, atualiza \texttt{head}.
+                    \item Se estiver no meio, o nó anterior (\texttt{ESI}) aponta para o próximo do nó removido.
+                \end{itemize}
+            \item Libera a memória do nó com \texttt{free}.
+        \end{enumerate}
+\end{enumerate}
+
+
+\section{Atualização de Produto}
+A função \texttt{update\_product\_interactive}:
+\begin{enumerate}
+  \item Lê nome e lote para localizar o nó.
+  \item Pergunta campo a atualizar (quantidade ou valor de venda).
+  \item Usa \texttt{scanf} + \texttt{clear\_input\_buffer} para ler o inteiro e grava no offset correspondente (8 para quantidade, 16 para venda).
+  \item Confirma sucesso ou falha via mensagens.
+\end{enumerate}
+
+\section{Consultas Financeiras}
+Função: \texttt{finance\_menu}
+Apresenta um submenu para o usuário escolher entre:
+\begin{enumerate}
+    \item Total gasto em compras.
+    \item Total estimado de vendas.
+    \item Lucro total estimado.
+    \item Capital perdido (produtos vencidos).
+\end{enumerate}
+
+\textbf{Fluxo:}
+\begin{itemize}
+    \item \texttt{total\_compra}: Percorre a lista somando \texttt{quantidade * valor\_compra} para cada produto.
+    \item \texttt{total\_venda}: Percorre a lista somando \texttt{quantidade * valor\_venda} para cada produto.
+    \item \texttt{lucro\_total}: Calcula \texttt{total\_venda - total\_compra}.
+    \item \texttt{capital\_perdido}:
+        \begin{enumerate}
+            \item Pede a data atual ao usuário.
+            \item Para cada produto, compara a data de validade com a data atual usando \texttt{compare\_dates}.
+            \item Se a validade for anterior à data atual, soma \texttt{quantidade * valor\_compra} ao total perdido.
+        \end{enumerate}
+    \item Os resultados são impressos em formato de moeda (reais.centavos).
+\end{itemize}
+
+\textbf{Registradores nas funções de soma:}
+\begin{itemize}
+    \item \textbf{EBX}: ponteiro para o nó atual.
+    \item \textbf{ESI}: acumulador do total.
+\end{itemize}
+
+\section{Persistência em Disco}
+\subsection{Gravação (\texttt{save\_list})}
+\begin{enumerate}
+  \item Abre \texttt{produtos.bin} em modo \texttt{wb}.
+  \item Para cada nó: copia \texttt{dados\_size} bytes (offset 4) para um buffer via \texttt{memcpy}, chama \texttt{fwrite}.
+  \item Fecha arquivo (\texttt{fclose}).
+\end{enumerate}
+
+\subsection{Carregamento (\texttt{load\_list})}
+\begin{enumerate}
+  \item Abre \texttt{produtos.bin} em modo \texttt{rb}.
+  \item Enquanto \texttt{fread} retornar \texttt{dados\_size}: aloca nó (\texttt{malloc}), copia buffer para \texttt{novo+4}, chama \texttt{insert\_sorted}.
+  \item Fecha arquivo.
+\end{enumerate}
+
+\section{Geração de Relatórios}
+Função: \texttt{generate\_report}
+
+Gera um relatório em arquivo texto (\texttt{relatorio.txt}) com todos os produtos. O usuário pode escolher a ordenação: por nome (padrão), por quantidade ou por data de validade (mais antiga primeiro).
+
+\textbf{Fluxo:}
+\begin{enumerate}
+    \item Abre o arquivo para escrita.
+    \item Pergunta ao usuário o critério de ordenação.
+    \item Dependendo da escolha:
+        \begin{itemize}
+            \item \textbf{Ordenação por nome}: percorre a lista normalmente (já está ordenada por nome).
+            \item \textbf{Ordenação por quantidade ou data}: 
+                \begin{enumerate}
+                    \item Conta o número de nós.
+                    \item Aloca um array de ponteiros para nós.
+                    \item Preenche o array com os ponteiros dos nós.
+                    \item Ordena o array (usando \texttt{sort\_by\_quantity} ou \texttt{sort\_by\_date}).
+                    \item Percorre o array ordenado, escrevendo cada produto no arquivo.
+                    \item Libera o array.
+                \end{enumerate}
+        \end{itemize}
+    \item Para cada produto, escreve todos os campos no arquivo usando \texttt{fprintf}.
+    \item Fecha o arquivo.
+\end{enumerate}
+
+\textbf{Ordenação:}
+\begin{itemize}
+    \item \texttt{sort\_by\_quantity}: Usa bubble sort no array de ponteiros, comparando o campo \texttt{quantidade}.
+    \item \texttt{sort\_by\_date}: Usa bubble sort comparando as datas. A função de comparação \texttt{compare\_nodes\_by\_date} extrai dia, mês e ano de cada nó e compara (ano, depois mês, depois dia).
+\end{itemize}
+\textbf{Registradores nas funções de ordenação:}
+\begin{itemize}
+    \item \textbf{ESI}: endereço do array.
+    \item \textbf{ECX}: número de elementos.
+    \item \textbf{EDI}, \textbf{EBX}: índices para loops.
+    \item \textbf{EAX}, \textbf{ECX}: ponteiros para nós durante a comparação.
+\end{itemize}
+
+\section{Limitações e Pontos de Melhoria}
+Embora funcional, o código ainda apresenta algumas fragilidades:
+\begin{itemize}
+  \item \textbf{Validação de entrada ausente:} todas as chamadas a \texttt{scanf} ou \texttt{read\_int} assumem que o usuário fornecerá dados válidos. É possível, por exemplo, ler dia, mês ou ano negativos, ou valores fora de faixa.
+  \item \textbf{Sem tratamento de erro em tempo de execução:} não há verificação do retorno de \texttt{fread}, \texttt{fwrite} ou \texttt{malloc} além do teste simples de ponteiro nulo. Em caso de falha parcial de I/O, o relatório ou a lista podem ficar corrompidos.
+  \item \textbf{Possíveis vazamentos de memória:} em \texttt{generate\_report}, se a alocação de \texttt{node\_array} falhar, a função retorna sem liberar memória prévia. Similarmente, em rotinas CRUD, \texttt{malloc} bem-sucedido que não é seguido de \texttt{insert\_sorted} em caso de erro não é sempre liberado.
+  \item \textbf{Limite fixo de buffers:} funções como \texttt{read\_string\_with\_prompt} usam \\ \texttt{fgets(buffer,50)} sem checar se o usuário excedeu 49 caracteres, o que pode resultar em truncamento silencioso.
+  \item \textbf{Overflow aritmético:} ao multiplicar quantidade por valor em centavos, não há verificação de estouro de 32 bits em \texttt{imull}, podendo levar a resultados incorretos em consultas financeiras.
+\end{itemize}
+
+\end{document}
