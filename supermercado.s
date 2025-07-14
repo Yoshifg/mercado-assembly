@@ -869,7 +869,7 @@ next_remove_search:
     movl  %ebx, %esi
     movl  (%ebx), %ebx
     jmp   remove_search_loop
-found_to_ remove:
+found_to_remove:
     testl %esi, %esi
     jz    remove_first
     movl  (%ebx), %eax

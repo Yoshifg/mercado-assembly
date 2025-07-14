@@ -4,3 +4,7 @@
 *.log
 *.synctex.gz
 *.toc
+*.nav
+*.out
+*.snm
+*.vrb

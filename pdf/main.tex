@@ -33,7 +33,9 @@
 \newpage
 
 \section{Visão Geral do Sistema}
-Este relatório detalha a implementação dO sistema de gerenciamento de produtos em Assembly 32 bits. O sistema utiliza uma lista encadeada para armazenar os produtos, com operações para adicionar, buscar, remover, atualizar, gerar relatórios e realizar consultas financeiras. O código é organizado em funções que manipulam a lista e interagem com o usuário via terminal.
+Este relatório detalha a implementação do sistema de gerenciamento de produtos em Assembly 32 bits. O sistema utiliza uma lista encadeada para armazenar os produtos, com operações para adicionar, buscar, remover, atualizar, gerar relatórios e realizar consultas financeiras. O código é organizado em funções que manipulam a lista e interagem com o usuário via terminal.
+
+A entrega inclui um arquivo makefile para compilar o código-fonte. O makefile utiliza \textit{gcc -m32} para gerar código 32 bits, portanto é necessário ter instalado o pacote \textit{gcc-multilib} no sistema (em distribuições baseadas no Debian/Ubuntu: \textit{sudo apt install gcc-multilib}). Para compilar o código, execute o comando \textit{make} no terminal. Para rodar o programa, execute \textit{./supermercado}.
 
 \section{Estrutura de Dados}
 A estrutura de um produto é definida com os seguintes campos:
