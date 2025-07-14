@@ -1,72 +1,9 @@
-Nome: Arroz-Japones-5kg
-Lote: 101
-Tipo: Alimento
-Validade: 01/01/2027
-Fornecedor: Guin
-Quantidade: 200
-Compra: 80.00
-Venda: 110.00
-----------------
-Nome: Arroz-Japones-5kg
-Lote: 100
-Tipo: Alimento
-Validade: 01/01/2026
-Fornecedor: Guin
-Quantidade: 100
-Compra: 80.00
-Venda: 110.00
-----------------
-Nome: Coca-Cola-2l
-Lote: 101
-Tipo: Bebidas
-Validade: 01/07/2026
-Fornecedor: Coca-Cola
-Quantidade: 300
-Compra: 8.00
-Venda: 12.00
-----------------
-Nome: Coca-Cola-2l
+Nome: Redbull-Original
 Lote: 100
 Tipo: Bebidas
 Validade: 01/01/2026
-Fornecedor: Coca-Cola
-Quantidade: 300
-Compra: 8.00
-Venda: 12.00
-----------------
-Nome: Geladeira-375l
-Lote: 100
-Tipo: Eletronicos
-Validade: 01/01/2050
-Fornecedor: Brastemp
-Quantidade: 20
-Compra: 2600.00
-Venda: 3300.00
-----------------
-Nome: Iphone-13-128gb
-Lote: 100
-Tipo: Eletronicos
-Validade: 01/01/2050
-Fornecedor: Apple
-Quantidade: 20
-Compra: 2000.00
-Venda: 2500.00
-----------------
-Nome: Kit-Talher
-Lote: 100
-Tipo: Utensilios
-Validade: 01/01/2050
-Fornecedor: Tramontina
-Quantidade: 50
-Compra: 80.00
-Venda: 100.00
-----------------
-Nome: Picanha-kg
-Lote: 100
-Tipo: Carnes
-Validade: 01/08/2025
-Fornecedor: Swift
-Quantidade: 100
-Compra: 65.00
-Venda: 80.00
+Fornecedor: Redbull
+Quantidade: 500
+Compra: 0.00
+Venda: 0.00
 ----------------

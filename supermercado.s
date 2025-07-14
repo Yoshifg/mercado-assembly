@@ -45,8 +45,8 @@
     fmt_data:   .asciz "Validade: %02d/%02d/%04d\n"
     fmt_fornec: .asciz "Fornecedor: %s\n"
     fmt_quant:  .asciz "Quantidade: %d\n"
-    fmt_compra: .asciz "Compra: %d.%02d\n"
-    fmt_venda:  .asciz "Venda: %d.%02d\n"
+    fmt_compra: .asciz "Compra: %.2f\n"
+    fmt_venda:  .asciz "Venda: %.2f\n"
     fmt_div:    .asciz "----------------\n"
 
     //=== Menu principal ===
@@ -62,8 +62,9 @@
     str_ano_prompt:            .asciz "Digite o ano da validade: "
     str_fornec_prompt:         .asciz "Digite o fornecedor: "
     str_quant_prompt:          .asciz "Digite a quantidade: "
-    str_compra_prompt:         .asciz "Digite o valor de compra (centavos): "
-    str_venda_prompt:          .asciz "Digite o valor de venda (centavos): "
+    str_float_input:           .asciz "%f"
+    str_compra_prompt:         .asciz "Digite o valor de compra (reais): "
+    str_venda_prompt:          .asciz "Digite o valor de venda (reais): "
     str_busca_prompt:          .asciz "Digite o nome para buscar: "
     str_remove_prompt:         .asciz "Digite o nome do produto a remover: "
     str_remove_lote_prompt:    .asciz "Digite o lote do produto a remover: "
@@ -71,7 +72,7 @@
     str_update_lote_prompt:    .asciz "Digite o lote do produto a atualizar: "
     str_update_campo:          .asciz "Qual campo deseja atualizar?\n1. Quantidade\n2. Valor de venda\nEscolha: "
     str_nova_quant:            .asciz "Digite a nova quantidade: "
-    str_nova_venda:            .asciz "Digite o novo valor de venda (centavos): "
+    str_nova_venda:            .asciz "Digite o novo valor de venda (reais): "
     str_invalido:              .asciz "Opção inválida!\n"
     str_saindo:                .asciz "Saindo...\n"
     str_malloc_fail:           .asciz "Falha ao alocar memoria!\n"
@@ -83,10 +84,10 @@
 
     //=== Consultas financeiras ===
     menu_financeiro:     .asciz "\n===== CONSULTAS FINANCEIRAS =====\n1. Total de compra\n2. Total de venda\n3. Lucro total\n4. Capital perdido\n5. Voltar\nEscolha: "
-    fmt_total_compra:    .asciz "Total gasto em compras: %d.%02d\n"
-    fmt_total_venda:     .asciz "Total estimado de vendas: %d.%02d\n"
-    fmt_lucro:           .asciz "Lucro estimado: %d.%02d\n"
-    fmt_capital_perdido: .asciz "Capital perdido: %d.%02d\n"
+    fmt_total_compra:    .asciz "Total gasto em compras: %.2f\n"
+    fmt_total_venda:     .asciz "Total estimado de vendas: %.2f\n"
+    fmt_lucro:           .asciz "Lucro estimado: %.2f\n"
+    fmt_capital_perdido: .asciz "Capital perdido: %.2f\n"
     str_dia_atual:       .asciz "Digite o dia atual: "
     str_mes_atual:       .asciz "Digite o mês atual: "
     str_ano_atual:       .asciz "Digite o ano atual: "
@@ -139,17 +140,17 @@
 .set produto_size, 152   #  dados_size + 4 bytes do próximo nó => 152 bytes
 
 //=== Offset dos campos no nó ===
-.set OFFSET_NEXT, 0      # 4 bytes
-.set OFFSET_TIPO, 4      # 4 bytes  
-.set OFFSET_QUANTIDADE, 8 # 4 bytes
-.set OFFSET_COMPRA, 12   # 4 bytes (float)
-.set OFFSET_VENDA, 16    # 4 bytes (float)
-.set OFFSET_NOME, 20     # 50 bytes
-.set OFFSET_LOTE, 70     # 20 bytes
-.set OFFSET_DIA, 90      # 4 bytes
-.set OFFSET_MES, 94      # 4 bytes
-.set OFFSET_ANO, 98      # 4 bytes
-.set OFFSET_FORNEC, 102  # 50 bytes
+.set OFFSET_NEXT,       0      # 4 bytes
+.set OFFSET_TIPO,       4      # 4 bytes  
+.set OFFSET_QUANTIDADE, 8      # 4 bytes
+.set OFFSET_COMPRA,     12     # 4 bytes (float)
+.set OFFSET_VENDA,      16     # 4 bytes (float)
+.set OFFSET_NOME,       20     # 50 bytes
+.set OFFSET_LOTE,       70     # 20 bytes
+.set OFFSET_DIA,        90     # 4 bytes
+.set OFFSET_MES,        94     # 4 bytes
+.set OFFSET_ANO,        98     # 4 bytes
+.set OFFSET_FORNEC,     102    # 50 bytes
 
 //=== Syscalls para Linux 32-bit ===
 .set SYS_OPEN, 5
@@ -228,7 +229,7 @@ insert_sorted:
     
 insertion_loop:
     # Comparar nome do novo nó com o atual
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     leal  20(%edi), %ecx
     pushl %ecx
     pushl %eax
@@ -438,21 +439,21 @@ print_product:
     movl  8(%ebp), %ebx
     
     # Imprime nome
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
     call  printf
     addl  $8, %esp
     
     # Imprime lote
-    leal  70(%ebx), %eax
+    leal  OFFSET_LOTE(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
     call  printf
     addl  $8, %esp
     
     # Imprime tipo
-    movl  4(%ebx), %eax             # pega o campo 'tipo' (1–15)
+    movl  OFFSET_TIPO(%ebx), %eax             # pega o campo 'tipo' (1–15)
     decl  %eax                      # ajusta para índice 0–14
     movl  tipos_ptr(,%eax,4), %ecx  # carrega ponteiro para a string
     pushl %ecx
@@ -461,9 +462,9 @@ print_product:
     addl  $8, %esp
     
     # Imprime data de validade
-    movl  98(%ebx), %eax
-    movl  94(%ebx), %ecx
-    movl  90(%ebx), %edx
+    movl  OFFSET_ANO(%ebx), %eax
+    movl  OFFSET_MES(%ebx), %ecx
+    movl  OFFSET_DIA(%ebx), %edx
     pushl %eax
     pushl %ecx
     pushl %edx
@@ -472,37 +473,31 @@ print_product:
     addl  $16, %esp
     
     # Imprime fornecedor
-    leal  102(%ebx), %eax
+    leal  OFFSET_FORNEC(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
     call  printf
     addl  $8, %esp
     
     # Imprime quantidade
-    movl  8(%ebx), %eax
+    movl  OFFSET_QUANTIDADE(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
     call  printf
     addl  $8, %esp
     
-    # Imprime valor de compra
-    movl  12(%ebx), %eax
-    xorl  %edx, %edx
-    movl  $100, %ecx
-    divl  %ecx
-    pushl %edx
-    pushl %eax
+    # Imprime valor de compra (float)
+    flds  OFFSET_COMPRA(%ebx)   # Carrega float da memória para FPU
+    subl  $8, %esp              # Espaço para double na pilha
+    fstpl (%esp)                # Converte para double e empilha
     pushl $fmt_compra
     call  printf
     addl  $12, %esp
 
-    # Imprime valor de venda    
-    movl  16(%ebx), %eax
-    xorl  %edx, %edx
-    movl  $100, %ecx
-    divl  %ecx
-    pushl %edx
-    pushl %eax
+    # Imprime valor de venda (float)
+    flds  OFFSET_VENDA(%ebx)
+    subl  $8, %esp
+    fstpl (%esp)
     pushl $fmt_venda
     call  printf
     addl  $12, %esp
@@ -537,7 +532,7 @@ search_loop:
     testl %ebx, %ebx
     jz    search_done
     
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     pushl %esi
     pushl %eax
     call  strcmp
@@ -688,7 +683,7 @@ add_product_interactive:
     movl  $0, (%ebx)
 
     # Leitura do nome
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     pushl %eax
     pushl $str_nome_prompt
     call  read_string_with_prompt
@@ -716,7 +711,7 @@ add_product_interactive:
     pushl $str_dia_prompt
     call  printf
     addl  $4, %esp
-    leal  90(%ebx), %eax
+    leal  OFFSET_DIA(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call  scanf
@@ -727,7 +722,7 @@ add_product_interactive:
     pushl $str_mes_prompt
     call  printf
     addl  $4, %esp
-    leal  94(%ebx), %eax
+    leal  OFFSET_MES(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call  scanf
@@ -738,7 +733,7 @@ add_product_interactive:
     pushl $str_ano_prompt
     call  printf
     addl  $4, %esp
-    leal  98(%ebx), %eax
+    leal  OFFSET_ANO(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call  scanf
@@ -746,7 +741,7 @@ add_product_interactive:
     call  clear_input_buffer
 
     # Leitura do fornecedor
-    leal  102(%ebx), %eax
+    leal  OFFSET_FORNEC(%ebx), %eax
     pushl %eax
     pushl $str_fornec_prompt
     call  read_string_with_prompt
@@ -756,31 +751,31 @@ add_product_interactive:
     pushl $str_quant_prompt
     call  printf
     addl  $4, %esp
-    leal  8(%ebx), %eax
+    leal  OFFSET_QUANTIDADE(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
 
-    # Leitura do valor de compra
+    # Leitura do valor de compra (float)
     pushl $str_compra_prompt
     call  printf
     addl  $4, %esp
-    leal  12(%ebx), %eax
+    leal  OFFSET_COMPRA(%ebx), %eax
     pushl %eax
-    pushl $str_escolha
+    pushl $str_float_input
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
 
-    # Leitura do valor de venda
+    # Leitura do valor de venda (float)
     pushl $str_venda_prompt
     call  printf
     addl  $4, %esp
-    leal  16(%ebx), %eax
+    leal  OFFSET_VENDA(%ebx), %eax
     pushl %eax
-    pushl $str_escolha
+    pushl $str_float_input
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
@@ -873,7 +868,7 @@ remove_product_interactive:
 remove_search_loop:
     testl %ebx, %ebx
     jz    remove_not_found
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     leal  -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
@@ -959,7 +954,7 @@ update_product_interactive:
 update_search_loop:
     testl %ebx, %ebx
     jz    update_not_found
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     leal  -50(%ebp), %ecx
     pushl %ecx
     pushl %eax
@@ -996,7 +991,7 @@ update_quantidade:
     pushl $str_nova_quant
     call  printf
     addl  $4, %esp
-    leal  8(%ebx), %eax
+    leal  OFFSET_QUANTIDADE(%ebx), %eax
     pushl %eax
     pushl $str_escolha
     call  scanf
@@ -1318,7 +1313,7 @@ print_product_to_file:
     movl  12(%ebp), %edi  # EDI = file handle
 
     # Escrever nome
-    leal  20(%ebx), %eax
+    leal  OFFSET_NOME(%ebx), %eax
     pushl %eax
     pushl $fmt_nome
     pushl %edi
@@ -1344,9 +1339,9 @@ print_product_to_file:
     addl  $12, %esp
     
     # Escrever data
-    movl  98(%ebx), %eax
-    movl  94(%ebx), %ecx
-    movl  90(%ebx), %edx
+    movl  OFFSET_ANO(%ebx), %eax
+    movl  OFFSET_MES(%ebx), %ecx
+    movl  OFFSET_DIA(%ebx), %edx
     pushl %eax
     pushl %ecx
     pushl %edx
@@ -1356,7 +1351,7 @@ print_product_to_file:
     addl  $20, %esp
     
     # Escrever fornecedor
-    leal  102(%ebx), %eax
+    leal  OFFSET_FORNEC(%ebx), %eax
     pushl %eax
     pushl $fmt_fornec
     pushl %edi
@@ -1364,7 +1359,7 @@ print_product_to_file:
     addl  $12, %esp
     
     # Escrever quantidade
-    movl  8(%ebx), %eax
+    movl  OFFSET_QUANTIDADE(%ebx), %eax
     pushl %eax
     pushl $fmt_quant
     pushl %edi
@@ -1593,21 +1588,31 @@ total_compra:
     pushl %ebp
     movl  %esp, %ebp
     pushl %ebx
-    pushl %esi
+    
+    fldz                        # ST(0) = 0.0 (acumulador)
     movl  head, %ebx
-    xorl  %esi, %esi
-compra_loop:
+
+compra_loop_float:
     testl %ebx, %ebx
-    jz    compra_done
-    movl  8(%ebx), %eax      # Quantidade
-    movl  12(%ebx), %edx     # Valor compra (centavos)
-    imull %edx, %eax        # quantidade * valor_compra
-    addl  %eax, %esi         # Acumula
-    movl  (%ebx), %ebx       # Próximo nó
-    jmp   compra_loop
-compra_done:
-    movl  %esi, %eax         # Retorna total em EAX
-    popl  %esi
+    jz    compra_done_float
+    
+    # Carregar quantidade (int) e converter para float
+    fildl  OFFSET_QUANTIDADE(%ebx)  # ST(0) = quantidade, ST(1) = total
+    
+    # Carregar valor_compra (float)
+    flds  OFFSET_COMPRA(%ebx)      # ST(0) = compra, ST(1) = quant, ST(2) = total
+    
+    # Multiplicar quantidade * valor_compra
+    fmulp %st, %st(1)              # ST(0) = quant*compra, ST(1) = total
+    
+    # Somar ao total
+    faddp %st, %st(1)              # ST(0) = total
+    
+    movl  (%ebx), %ebx             # Próximo nó
+    jmp   compra_loop_float
+
+compra_done_float:
+    # Resultado em ST(0)
     popl  %ebx
     leave
     ret
@@ -1622,21 +1627,23 @@ total_venda:
     pushl %ebp
     movl  %esp, %ebp
     pushl %ebx
-    pushl %esi
+    
+    fldz                        # ST(0) = 0.0
     movl  head, %ebx
-    xorl  %esi, %esi
-venda_loop:
+
+venda_loop_float:
     testl %ebx, %ebx
-    jz    venda_done
-    movl  8(%ebx), %eax      # Quantidade
-    movl  16(%ebx), %edx     # Valor venda (centavos)
-    imull %edx, %eax        # quantidade * valor_venda
-    addl  %eax, %esi         # Acumula
-    movl  (%ebx), %ebx       # Próximo nó
-    jmp   venda_loop
-venda_done:
-    movl  %esi, %eax         # Retorna total em EAX
-    popl  %esi
+    jz    venda_done_float
+    
+    fildl OFFSET_QUANTIDADE(%ebx)  # ST(0) = quantidade, ST(1) = total
+    flds  OFFSET_VENDA(%ebx)       # ST(0) = venda, ST(1) = quant, ST(2) = total
+    fmulp %st, %st(1)              # ST(0) = quant*venda, ST(1) = total
+    faddp %st, %st(1)              # ST(0) = total
+    
+    movl  (%ebx), %ebx
+    jmp   venda_loop_float
+
+venda_done_float:
     popl  %ebx
     leave
     ret
@@ -1650,12 +1657,11 @@ venda_done:
 lucro_total:
     pushl %ebp
     movl  %esp, %ebp
-    call  total_venda
-    pushl %eax
-    call  total_compra
-    popl  %edx
-    subl  %eax, %edx         # Lucro = venda - compra
-    movl  %edx, %eax         # Retorna lucro em EAX
+    
+    call  total_venda              # ST(0) = total_venda
+    call  total_compra             # ST(0) = total_compra, ST(1) = total_venda
+    fsubp %st, %st(1)              # ST(0) = total_venda - total_compra
+    
     leave
     ret
 
@@ -1749,9 +1755,9 @@ capital_loop:
     jz    capital_done
     
     # Carregar data do produto
-    movl  90(%ebx), %eax    # dia_prod
-    movl  94(%ebx), %ecx    # mes_prod
-    movl  98(%ebx), %edx    # ano_prod
+    movl  OFFSET_DIA(%ebx), %eax    # dia_prod
+    movl  OFFSET_MES(%ebx), %ecx    # mes_prod
+    movl  OFFSET_ANO(%ebx), %edx    # ano_prod
     
     # Empilhar parâmetros para compare_dates
     pushl ano_atual
@@ -1768,7 +1774,7 @@ capital_loop:
     jne   next_capital
     
     # Calcular perda: quantidade * valor_compra
-    movl  8(%ebx), %eax     # quantidade
+    movl  OFFSET_QUANTIDADE(%ebx), %eax     # quantidade
     movl  12(%ebx), %edx    # valor_compra
     imull %edx, %eax
     addl  %eax, %esi        # Acumula perda
@@ -1802,6 +1808,24 @@ print_currency:
     pushl %edx             # centavos
     pushl %eax             # reais
     pushl 8(%ebp)          # formato
+    call  printf
+    addl  $12, %esp
+    
+    leave
+    ret
+
+//------------------------------------------------------------------------------
+// Função: print_float_currency
+// Imprime valor float com formato de moeda
+// Entrada: ST(0) = valor float, [EBP+8] = formato
+//------------------------------------------------------------------------------
+print_float_currency:
+    pushl %ebp
+    movl  %esp, %ebp
+    
+    subl  $8, %esp                 # Espaço para double
+    fstpl (%esp)                   # Converte ST(0) para double na pilha
+    pushl 8(%ebp)                  # Formato
     call  printf
     addl  $12, %esp
     
@@ -1845,21 +1869,21 @@ finance_loop:
 fm_total_compra:
     call  total_compra
     pushl $fmt_total_compra
-    call  print_currency
+    call  print_float_currency
     addl  $4, %esp
     jmp   finance_loop
 
 fm_total_venda:
     call  total_venda
     pushl $fmt_total_venda
-    call  print_currency
+    call  print_float_currency
     addl  $4, %esp
     jmp   finance_loop
 
 fm_lucro:
     call  lucro_total
     pushl $fmt_lucro
-    call  print_currency
+    call  print_float_currency
     addl  $4, %esp
     jmp   finance_loop
 
