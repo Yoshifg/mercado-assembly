@@ -138,8 +138,32 @@
 .set dados_size, 148     #  | Nome (50) | Lote (20) | Tipo (4) | Dia (4) | Mês (4) | Ano (4) | Fornecedor (50) | Quantidade (4) | Compra (4) | Venda (4) | => 148 bytes
 .set produto_size, 152   #  dados_size + 4 bytes do próximo nó => 152 bytes
 
+//=== Offset dos campos no nó ===
+.set OFFSET_NEXT, 0      # 4 bytes
+.set OFFSET_TIPO, 4      # 4 bytes  
+.set OFFSET_QUANTIDADE, 8 # 4 bytes
+.set OFFSET_COMPRA, 12   # 4 bytes (float)
+.set OFFSET_VENDA, 16    # 4 bytes (float)
+.set OFFSET_NOME, 20     # 50 bytes
+.set OFFSET_LOTE, 70     # 20 bytes
+.set OFFSET_DIA, 90      # 4 bytes
+.set OFFSET_MES, 94      # 4 bytes
+.set OFFSET_ANO, 98      # 4 bytes
+.set OFFSET_FORNEC, 102  # 50 bytes
 
+//=== Syscalls para Linux 32-bit ===
+.set SYS_OPEN, 5
+.set SYS_CLOSE, 6
+.set SYS_READ, 3
+.set SYS_WRITE, 4
+.set SYS_CREAT, 8
 
+//=== Flags para open ===
+.set O_RDONLY, 0
+.set O_WRONLY, 1
+.set O_RDWR, 2
+.set O_CREAT, 64
+.set O_TRUNC, 512
 
 /*===============================================================================================
 |                                                                                                |
@@ -268,23 +292,24 @@ save_list:
     movl  %esp, %ebp
     pushl %ebx
     pushl %esi
+
+    # Abrir arquivo com syscall open
+    movl  $SYS_OPEN, %eax
+    movl  $filename, %ebx
+    movl  $(O_WRONLY | O_CREAT | O_TRUNC), %ecx
+    movl  $0644, %edx           # Permissões
+    int   $0x80
     
-    # Abre o arquivo para escrita em binário
-    pushl $modo_escrita
-    pushl $filename
-    call  fopen
-    addl  $8, %esp
-    movl  %eax, %ebx
-    
-    testl %ebx, %ebx
-    jz    save_done
-    
+    cmpl  $0, %eax
+    jl    save_done             # Erro ao abrir
+    movl  %eax, %ebx            # File descriptor
+
     movl  head, %esi
-save_loop:
+save_loop_sys:
     testl %esi, %esi
-    jz    close_save
+    jz    close_save_sys
     
-    # Prepara o buffer para escrita
+    # Copiar dados para buffer (pula ponteiro next)
     leal  4(%esi), %eax
     pushl $dados_size
     pushl %eax
@@ -292,21 +317,21 @@ save_loop:
     call  memcpy
     addl  $12, %esp
     
-    # Grava o buffer no arquivo
-    pushl %ebx
-    pushl $dados_size
-    pushl $1
-    pushl $buffer
-    call  fwrite
-    addl  $16, %esp
+    # Escrever com syscall write
+    movl  $SYS_WRITE, %eax
+    # %ebx já tem o file descriptor
+    movl  $buffer, %ecx
+    movl  $dados_size, %edx
+    int   $0x80
     
-    movl  (%esi), %esi
-    jmp   save_loop
+    movl  (%esi), %esi          # Próximo nó
+    jmp   save_loop_sys
     
-close_save:
-    pushl %ebx
-    call  fclose
-    addl  $4, %esp
+close_save_sys:
+    # Fechar arquivo
+    movl  $SYS_CLOSE, %eax
+    # %ebx já tem o file descriptor
+    int   $0x80
     
 save_done:
     popl  %esi
@@ -330,59 +355,59 @@ load_list:
     movl  %esp, %ebp
     pushl %ebx
     pushl %esi
+
+    # Abrir arquivo com syscall open
+    movl  $SYS_OPEN, %eax
+    movl  $filename, %ebx
+    movl  $O_RDONLY, %ecx
+    int   $0x80
     
-    # Abre o arquivo para leitura em binário
-    pushl $modo_leitura
-    pushl $filename
-    call  fopen
-    addl  $8, %esp
-    movl  %eax, %ebx
-    
-    testl %ebx, %ebx
-    jz    load_done
-    
-load_loop:
-    # Lê dados do arquivo
-    pushl %ebx
-    pushl $dados_size
-    pushl $1
-    pushl $buffer
-    call  fread
-    addl  $16, %esp
+    cmpl  $0, %eax
+    jl    load_done_sys         # Arquivo não existe
+    movl  %eax, %ebx            # File descriptor
+
+load_loop_sys:
+    # Ler dados com syscall read
+    movl  $SYS_READ, %eax
+    # %ebx já tem o file descriptor
+    movl  $buffer, %ecx
+    movl  $dados_size, %edx
+    int   $0x80
     
     cmpl  $dados_size, %eax
-    jne   close_load
+    jne   close_load_sys        # EOF ou erro
     
-    # Aloca novo nó na memória
+    # Alocar novo nó
     pushl $produto_size
     call  malloc
     addl  $4, %esp
     testl %eax, %eax
-    jz    close_load
+    jz    close_load_sys
     
-    movl $0, (%eax)
-    leal 4(%eax), %edi
+    movl  $0, (%eax)           # next = NULL
+    leal  4(%eax), %edi
     
-    // copiar buffer para o nó
+    # Copiar buffer para o nó
     pushl $dados_size
     pushl $buffer
     pushl %edi
     call  memcpy
     addl  $12, %esp
     
-    // inserir nó na lista
+    # Inserir na lista
     pushl %eax
     call  insert_sorted
     addl  $4, %esp
     
-    jmp   load_loop
+    jmp   load_loop_sys
     
-close_load:
-    pushl %ebx
-    call  fclose
-    addl  $4, %esp
+close_load_sys:
+    # Fechar arquivo
+    movl  $SYS_CLOSE, %eax
+    # %ebx já tem o file descriptor
+    int   $0x80
     
-load_done:
+load_done_sys:
     popl  %esi
     popl  %ebx
     leave
