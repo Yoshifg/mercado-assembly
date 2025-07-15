@@ -188,14 +188,14 @@ Apresenta um submenu para o usuário escolher entre:
 \end{itemize}
 
 \section{Persistência em Disco}
-\subsection{Gravação (\texttt{save\_list})}
+\subsection*{Gravação (\texttt{save\_list})}
 \begin{enumerate}
   \item Abre \texttt{produtos.bin} em modo \texttt{wb}.
   \item Para cada nó: copia \texttt{dados\_size} bytes (offset 4) para um buffer via \texttt{memcpy}, chama \texttt{fwrite}.
   \item Fecha arquivo (\texttt{fclose}).
 \end{enumerate}
 
-\subsection{Carregamento (\texttt{load\_list})}
+\subsection*{Carregamento (\texttt{load\_list})}
 \begin{enumerate}
   \item Abre \texttt{produtos.bin} em modo \texttt{rb}.
   \item Enquanto \texttt{fread} retornar \texttt{dados\_size}: aloca nó (\texttt{malloc}), copia buffer para \texttt{novo+4}, chama \texttt{insert\_sorted}.
