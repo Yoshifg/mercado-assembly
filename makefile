@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -m32 -no-pie
+CFLAGS = -m32 -no-pie -lm
 TARGET = supermercado
 SRC = supermercado.s
 DATA = produtos.bin relatorio.txt
