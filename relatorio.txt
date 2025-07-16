@@ -1,9 +1,0 @@
-Nome: Redbull-Original
-Lote: 100
-Tipo: Bebidas
-Validade: 01/01/2026
-Fornecedor: Redbull
-Quantidade: 500
-Compra: 0.00
-Venda: 0.00
-----------------

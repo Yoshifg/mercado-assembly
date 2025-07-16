@@ -690,7 +690,7 @@ add_product_interactive:
     addl  $8, %esp
 
     # Leitura do lote
-    leal  70(%ebx), %eax
+    leal  OFFSET_LOTE(%ebx), %eax
     pushl %eax
     pushl $str_lote_prompt
     call  read_string_with_prompt
@@ -876,7 +876,7 @@ remove_search_loop:
     addl  $8, %esp
     testl %eax, %eax
     jnz   next_remove_search
-    leal  70(%ebx), %eax
+    leal  OFFSET_LOTE(%ebx), %eax
     leal  -70(%ebp), %ecx
     pushl $20
     pushl %ecx
@@ -962,7 +962,7 @@ update_search_loop:
     addl  $8, %esp
     testl %eax, %eax
     jnz   next_update_search
-    leal  70(%ebx), %eax
+    leal  OFFSET_LOTE(%ebx), %eax
     leal  -70(%ebp), %ecx
     pushl $20
     pushl %ecx
@@ -1002,9 +1002,10 @@ update_venda:
     pushl $str_nova_venda
     call  printf
     addl  $4, %esp
-    leal  16(%ebx), %eax
+    leal  OFFSET_VENDA(%ebx), %eax
     pushl %eax
-    pushl $str_escolha
+    # Atualizado para ler float
+    pushl $str_float_input
     call  scanf
     addl  $8, %esp
     call  clear_input_buffer
@@ -1321,7 +1322,7 @@ print_product_to_file:
     addl  $12, %esp
     
     # Escrever lote
-    leal  70(%ebx), %eax
+    leal  OFFSET_LOTE(%ebx), %eax
     pushl %eax
     pushl $fmt_lote
     pushl %edi
@@ -1366,26 +1367,20 @@ print_product_to_file:
     call  fprintf
     addl  $12, %esp
     
-    # Escrever valor de compra
-    movl  12(%ebx), %eax
-    xorl  %edx, %edx
-    movl  $100, %ecx
-    divl  %ecx
-    pushl %edx
-    pushl %eax
-    pushl $fmt_compra
+    # Escrever valor de compra (agora como float)
+    flds  OFFSET_COMPRA(%ebx)       # Carrega float
+    subl  $8, %esp                  # Espaço para double
+    fstpl (%esp)                    # Converte para double
+    pushl $fmt_compra               # "Compra: %.2f\n"
     pushl %edi
     call  fprintf
     addl  $16, %esp
     
-    # Escrever valor de venda
-    movl  16(%ebx), %eax
-    xorl  %edx, %edx
-    movl  $100, %ecx
-    divl  %ecx
-    pushl %edx
-    pushl %eax
-    pushl $fmt_venda
+    # Escrever valor de venda (agora como float)
+    flds  OFFSET_VENDA(%ebx)        # Carrega float
+    subl  $8, %esp                  # Espaço para double
+    fstpl (%esp)                    # Converte para double
+    pushl $fmt_venda                # "Venda: %.2f\n"
     pushl %edi
     call  fprintf
     addl  $16, %esp
@@ -1658,8 +1653,8 @@ lucro_total:
     pushl %ebp
     movl  %esp, %ebp
     
-    call  total_venda              # ST(0) = total_venda
-    call  total_compra             # ST(0) = total_compra, ST(1) = total_venda
+    call  total_compra             # ST(0) = total_compra
+    call  total_venda              # ST(0) = total_venda, ST(1) = total_compra
     fsubp %st, %st(1)              # ST(0) = total_venda - total_compra
     
     leave
@@ -1748,7 +1743,7 @@ capital_perdido:
     call  clear_input_buffer
     
     movl  head, %ebx
-    xorl  %esi, %esi        # Acumulador = 0
+    fldz                    # ST(0) = 0.0 (acumulador)
 
 capital_loop:
     testl %ebx, %ebx
@@ -1767,17 +1762,17 @@ capital_loop:
     pushl %ecx             # mes_prod
     pushl %eax             # dia_prod
     call  compare_dates
-    addl  $24, %esp         # Limpar parâmetros
+    addl  $24, %esp        # Limpar parâmetros
     
     # Se data produto < data atual (vencido)
     cmpl  $-1, %eax
     jne   next_capital
     
-    # Calcular perda: quantidade * valor_compra
-    movl  OFFSET_QUANTIDADE(%ebx), %eax     # quantidade
-    movl  12(%ebx), %edx    # valor_compra
-    imull %edx, %eax
-    addl  %eax, %esi        # Acumula perda
+    # Calcular perda: quantidade * valor_compra (agora usando float)
+    fildl OFFSET_QUANTIDADE(%ebx)   # ST(0) = quantidade, ST(1) = total
+    flds  OFFSET_COMPRA(%ebx)       # ST(0) = valor_compra, ST(1) = quant, ST(2) = total
+    fmulp %st, %st(1)               # ST(0) = quant*valor_compra, ST(1) = total
+    faddp %st, %st(1)               # ST(0) = total (acumula perda)
 
 next_capital:
     movl  (%ebx), %ebx      # Próximo nó
@@ -1890,7 +1885,7 @@ fm_lucro:
 fm_capital_perdido:
     call  capital_perdido
     pushl $fmt_capital_perdido
-    call  print_currency
+    call  print_float_currency
     addl  $4, %esp
     jmp   finance_loop
 

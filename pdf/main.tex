@@ -33,18 +33,19 @@
 \newpage
 
 \section{Visão Geral do Sistema}
-Este relatório detalha a implementação do sistema de gerenciamento de produtos em Assembly 32 bits. O sistema utiliza uma lista encadeada para armazenar os produtos, com operações para adicionar, buscar, remover, atualizar, gerar relatórios e realizar consultas financeiras. O código é organizado em funções que manipulam a lista e interagem com o usuário via terminal.
+Este relatório detalha a implementação do sistema de gerenciamento de produtos em Assembly 32 bits, com foco nas modificações realizadas para suportar ponto flutuante e syscalls. O sistema utiliza uma lista encadeada simplesmente ligada para armazenar os produtos, implementando operações CRUD, consultas financeiras e geração de relatórios. As principais mudanças incluem o uso de valores monetários em float e a substituição de funções de biblioteca por chamadas de sistema para operações de E/S em arquivos.
 
-A entrega inclui um arquivo makefile para compilar o código-fonte. O makefile utiliza \textit{gcc -m32} para gerar código 32 bits, portanto é necessário ter instalado o pacote \textit{gcc-multilib} no sistema (em distribuições baseadas no Debian/Ubuntu: \textit{sudo apt install gcc-multilib}). Para compilar o código, execute o comando \textit{make} no terminal. Para rodar o programa, execute \textit{./supermercado}.
+A entrega inclui um arquivo makefile para compilar o código-fonte. O makefile utiliza \textit{gcc -m32} para gerar código 32 bits e \textit{-lm} para linkar a biblioteca matemática, portanto é necessário ter instalado o pacote \textit{gcc-multilib} no sistema (em distribuições baseadas no Debian/Ubuntu: \textit{sudo apt install gcc-multilib}). Para compilar o código, execute o comando \textit{make} no terminal. Para rodar o programa, execute \textit{./supermercado}.
 
-\section{Estrutura de Dados}
-A estrutura de um produto é definida com os seguintes campos:
+\section{Estrutura de Dados Modificada}
+A estrutura de dados foi otimizada para suportar valores monetários em ponto flutuante:
+
 \begin{itemize}
     \item \textbf{next}: ponteiro para o próximo nó (4 bytes)
     \item \textbf{tipo}: inteiro (4 bytes)
     \item \textbf{quantidade}: inteiro (4 bytes)
-    \item \textbf{valor\_compra}: inteiro (em centavos, 4 bytes)
-    \item \textbf{valor\_venda}: inteiro (em centavos, 4 bytes)
+    \item \textbf{valor\_compra}: float (4 bytes) - \textbf{MODIFICADO}
+    \item \textbf{valor\_venda}: float (4 bytes) - \textbf{MODIFICADO}
     \item \textbf{nome}: string (50 bytes)
     \item \textbf{lote}: string (20 bytes)
     \item \textbf{dia}: inteiro (4 bytes)
@@ -53,202 +54,263 @@ A estrutura de um produto é definida com os seguintes campos:
     \item \textbf{fornecedor}: string (50 bytes)
 \end{itemize}
 
-O tamanho total da estrutura é 152 bytes, sendo 4 bytes para o ponteiro e 148 bytes para os dados.
-
-A lista é acessada através de um ponteiro global \texttt{head} que aponta para o primeiro nó.
-
-\section{Registradores principais}
-    \begin{description}
-      \item[EAX] Acumulador / retorno de função / aritmética.
-      \item[EBX] Preservado por chamadas (\emph{callee-saved}), guarda ponteiros de nó, handle de arquivo, buffer, etc.
-      \item[ECX] Contador em loops, ou divisor em \texttt{divl}.
-      \item[EDX] Resto de divisão / auxiliares em formatação de moeda.
-      \item[ESI, EDI] Índices / preservados, usados para percorrer listas ou passar handles.
-      \item[EBP, ESP] Gerenciam o frame de pilha de cada função.
-    \end{description}
-
-\section{Adição de Produto}
-Função: \texttt{add\_product\_interactive}
-Esta função interage com o usuário para coletar os dados do produto, aloca memória para o novo nó e o insere na lista de forma ordenada pelo nome.
-\textbf{Registradores principais:}
+\textbf{Offsets dos campos no nó:}
 \begin{itemize}
-    \item \textbf{EAX}: usado para armazenar o endereço do novo nó alocado.
-    \item \textbf{EBX}: mantém o endereço do novo nó durante a coleta de dados.
+    \item OFFSET\_COMPRA: 12 bytes (campo float)
+    \item OFFSET\_VENDA: 16 bytes (campo float)
+    \item Demais campos mantiveram seus offsets originais
 \end{itemize}
-\textbf{Fluxo:}
+
+O tamanho total permanece 152 bytes, mas agora com precisão decimal para valores monetários.
+
+\section{Implementação de Ponto Flutuante}
+
+\subsection{Leitura de Valores Float}
+A entrada de valores monetários foi modificada para usar scanf com especificador \texttt{\%f}:
+
+\begin{verbatim}
+# Leitura do valor de compra (float)
+pushl $str_compra_prompt
+call  printf
+addl  $4, %esp
+leal  OFFSET_COMPRA(%ebx), %eax
+pushl %eax
+pushl $str_float_input      # "%f"
+call  scanf
+addl  $8, %esp
+\end{verbatim}
+
+\subsection{Impressão de Valores Float}
+Para impressão, os valores float são convertidos para double na pilha da FPU:
+
+\begin{verbatim}
+# Imprime valor de compra (float)
+flds  OFFSET_COMPRA(%ebx)   # Carrega float para FPU
+subl  $8, %esp              # Espaço para double
+fstpl (%esp)                # Converte para double
+pushl $fmt_compra           # "Compra: %.2f\n"
+call  printf
+addl  $12, %esp
+\end{verbatim}
+
+\subsection{Operações Aritméticas com FPU}
+As funções financeiras foram completamente reescritas para usar a Floating Point Unit:
+
+\textbf{Instruções FPU utilizadas:}
+\begin{itemize}
+    \item \texttt{fldz}: carrega 0.0 no topo da pilha FPU
+    \item \texttt{flds}: carrega float de 32 bits da memória
+    \item \texttt{fildl}: carrega inteiro de 32 bits e converte para float
+    \item \texttt{faddp}: soma e remove do topo da pilha
+    \item \texttt{fmulp}: multiplica e remove do topo da pilha
+    \item \texttt{fsubp}: subtrai e remove do topo da pilha
+    \item \texttt{fstpl}: armazena como double e remove da pilha
+\end{itemize}
+
+\section{Implementação de Syscalls para E/S de Arquivo}
+
+\subsection{Definições de Syscalls}
+O código define constantes para syscalls do Linux 32-bit:
+
+\begin{verbatim}
+.set SYS_OPEN, 5
+.set SYS_CLOSE, 6
+.set SYS_READ, 3
+.set SYS_WRITE, 4
+
+.set O_RDONLY, 0
+.set O_WRONLY, 1
+.set O_CREAT, 64
+.set O_TRUNC, 512
+\end{verbatim}
+
+\subsection{Gravação com Syscalls (save\_list)}
+A função foi reescrita para usar syscalls em vez de \texttt{fopen/fwrite/fclose}:
+
 \begin{enumerate}
-    \item Aloca memória para o novo produto (152 bytes) usando \texttt{malloc}.
-    \item Inicializa o ponteiro \texttt{next} do novo nó como NULL.
-    \item Lê os campos do produto (nome, lote, tipo, dia, mês, ano, fornecedor, quantidade, valor de compra, valor de venda) usando funções auxiliares (\texttt{read\_string\_with\_prompt}, \\ \texttt{printf}, \texttt{scanf}).
-    \item Chama \texttt{insert\_sorted} para inserir o nó na lista mantendo a ordem alfabética pelo nome.
-\end{enumerate}
-\textbf{Função \texttt{insert\_sorted}:}
-\begin{itemize}
-    \item \textbf{EBX}: contém o endereço do novo nó.
-    \item \textbf{EDI}: ponteiro atual na lista (começa em \texttt{head}).
-    \item \textbf{ESI}: ponteiro anterior (para inserção).
-    \item Compara o nome do novo nó com os nomes dos nós existentes usando \texttt{strcmp}.
-    \item Insere o nó na posição correta:
-        \begin{itemize}
-            \item Se a lista estiver vazia, \texttt{head} aponta para o novo nó.
-            \item Se o novo nó deve ser o primeiro, atualiza \texttt{head} e o ponteiro \texttt{next} do novo nó.
-            \item Caso contrário, insere no meio ou no final.
-        \end{itemize}
-\end{itemize}
-
-\section{Busca de Produto}
-Função: \texttt{search\_product\_interactive}
-
-Esta função lê um nome do usuário e percorre a lista imprimindo todos os produtos com nomes que coincidem.
-
-\textbf{Registradores principais:}
-\begin{itemize}
-    \item \textbf{EBX}: ponteiro para o nó atual durante a busca.
-    \item \textbf{EAX}: usado para chamadas de função e comparações.
-\end{itemize}
-
-\textbf{Fluxo:}
-\begin{enumerate}
-    \item Lê o nome a ser buscado.
-    \item Chama \texttt{search\_product} com o nome.
-    \item Em \texttt{search\_product}:
-        \begin{enumerate}
-            \item Inicia no \texttt{head}.
-            \item Para cada nó, compara o nome com o nome buscado usando \texttt{strcmp}.
-            \item Se coincidir, imprime o produto usando \texttt{print\_product}.
-            \item Avança para o próximo nó.
-        \end{enumerate}
-\end{enumerate}
-
-
-\section{Remoção de Produto}
-Função: \texttt{remove\_product\_interactive}
-
-Remove um produto específico baseado no nome e lote.
-
-\textbf{Registradores principais:}
-\begin{itemize}
-    \item \textbf{EBX}: ponteiro para o nó atual.
-    \item \textbf{ESI}: ponteiro para o nó anterior (para ajustar os ponteiros).
-\end{itemize}
-
-\textbf{Fluxo:}
-\begin{enumerate}
-    \item Lê o nome e o lote do produto a ser removido.
-    \item Percorre a lista:
-        \begin{enumerate}
-            \item Compara o nome e o lote do nó atual com os valores lidos.
-            \item Quando encontra, remove o nó:
-                \begin{itemize}
-                    \item Se for o primeiro nó, atualiza \texttt{head}.
-                    \item Se estiver no meio, o nó anterior (\texttt{ESI}) aponta para o próximo do nó removido.
-                \end{itemize}
-            \item Libera a memória do nó com \texttt{free}.
-        \end{enumerate}
+    \item \textbf{Abertura}: Usa syscall \texttt{open} com flags \texttt{O\_WRONLY | O\_CREAT | O\_TRUNC}
+    \item \textbf{Escrita}: Para cada nó, copia 148 bytes (dados sem ponteiro) para buffer e usa syscall \texttt{write}
+    \item \textbf{Fechamento}: Usa syscall \texttt{close}
 \end{enumerate}
 
+\begin{verbatim}
+# Abrir arquivo
+movl  $SYS_OPEN, %eax
+movl  $filename, %ebx
+movl  $(O_WRONLY | O_CREAT | O_TRUNC), %ecx
+movl  $0644, %edx           # Permissões
+int   $0x80
 
-\section{Atualização de Produto}
-A função \texttt{update\_product\_interactive}:
+# Escrever dados
+movl  $SYS_WRITE, %eax
+# %ebx já tem o file descriptor
+movl  $buffer, %ecx
+movl  $dados_size, %edx
+int   $0x80
+\end{verbatim}
+
+\subsection{Leitura com Syscalls (load\_list)}
+Processo similar para leitura:
+
 \begin{enumerate}
-  \item Lê nome e lote para localizar o nó.
-  \item Pergunta campo a atualizar (quantidade ou valor de venda).
-  \item Usa \texttt{scanf} + \texttt{clear\_input\_buffer} para ler o inteiro e grava no offset correspondente (8 para quantidade, 16 para venda).
-  \item Confirma sucesso ou falha via mensagens.
+    \item \textbf{Abertura}: Syscall \texttt{open} com flag \texttt{O\_RDONLY}
+    \item \textbf{Leitura}: Loop que lê blocos de 148 bytes com syscall \texttt{read}
+    \item \textbf{Processamento}: Para cada bloco lido, aloca nó e insere na lista
+    \item \textbf{Término}: Quando \texttt{read} retorna menos que 148 bytes (EOF)
 \end{enumerate}
 
-\section{Consultas Financeiras}
-Função: \texttt{finance\_menu}
-Apresenta um submenu para o usuário escolher entre:
-\begin{enumerate}
-    \item Total gasto em compras.
-    \item Total estimado de vendas.
-    \item Lucro total estimado.
-    \item Capital perdido (produtos vencidos).
-\end{enumerate}
+\section{Funções Financeiras com Ponto Flutuante}
 
-\textbf{Fluxo:}
+\subsection{Função total\_venda}
+Implementada de forma similar à \texttt{total\_compra}, mas utilizando o campo \texttt{valor\_venda}:
+
+\begin{verbatim}
+total_venda:
+    pushl %ebp
+    movl  %esp, %ebp
+    pushl %ebx
+    
+    fldz                        # ST(0) = 0.0
+    movl  head, %ebx
+
+venda_loop_float:
+    testl %ebx, %ebx
+    jz    venda_done_float
+    
+    fildl OFFSET_QUANTIDADE(%ebx)  # Quantidade como float
+    flds  OFFSET_VENDA(%ebx)       # Valor de venda (float)
+    fmulp %st, %st(1)              # quantidade * valor_venda
+    faddp %st, %st(1)              # Acumula total
+    
+    movl  (%ebx), %ebx             # Próximo nó
+    jmp   venda_loop_float
+
+venda_done_float:
+    # Resultado em ST(0)
+    popl  %ebx
+    leave
+    ret
+\end{verbatim}
+
+\subsection{Função lucro\_total}
+Calcula o lucro estimado subtraindo o total de compras do total de vendas:
+
+\begin{verbatim}
+lucro_total:
+    pushl %ebp
+    movl  %esp, %ebp
+    
+    call  total_compra  # ST(0) = total_compra
+    call  total_venda   # ST(0) = total_venda, ST(1) = total_compra
+    fsubp %st, %st(1)   # ST(0) = total_venda - total_compra
+    
+    leave
+    ret
+\end{verbatim}
+
+A ordem das chamadas é crucial - \texttt{total\_compra} primeiro, depois \texttt{total\_venda}, para que a subtração \texttt{fsubp} resulte em \texttt{venda - compra}.
+
+\subsection{Função capital\_perdido}
+Esta função agora implementa a lógica de cálculo de capital perdido com ponto flutuante:
+
+\begin{verbatim}
+capital_perdido:
+    # ... leitura da data atual ...
+    
+    movl  head, %ebx
+    fldz                    # ST(0) = 0.0 (acumulador)
+
+capital_loop:
+    testl %ebx, %ebx
+    jz    capital_done
+    
+    # Carregar data do produto e comparar
+    # ... código de comparação de datas ...
+    
+    cmpl  $-1, %eax         # Se vencido (-1)
+    jne   next_capital
+    
+    # Calcular perda usando FPU
+    fildl OFFSET_QUANTIDADE(%ebx)   # Quantidade como float
+    flds  OFFSET_COMPRA(%ebx)       # Valor de compra (float)
+    fmulp %st, %st(1)               # quantidade * valor_compra
+    faddp %st, %st(1)               # Acumula perda total
+
+next_capital:
+    movl  (%ebx), %ebx      # Próximo produto
+    jmp   capital_loop
+\end{verbatim}
+
+\subsection{Função print\_float\_currency}
+Nova função para formatação de valores monetários:
+
+\begin{verbatim}
+print_float_currency:
+    pushl %ebp
+    movl  %esp, %ebp
+    
+    subl  $8, %esp          # Espaço para double
+    fstpl (%esp)            # Converte ST(0) para double
+    pushl 8(%ebp)           # Formato ("%.2f")
+    call  printf
+    addl  $12, %esp
+    
+    leave
+    ret
+\end{verbatim}
+
+\section{Atualização de Valor de Venda com Float}
+A função \texttt{update\_product\_interactive} foi modificada para suportar corretamente a atualização de valores monetários em ponto flutuante:
+
+\begin{verbatim}
+update_venda:
+    pushl $str_nova_venda           # Prompt para novo valor
+    call  printf
+    addl  $4, %esp
+    
+    leal  OFFSET_VENDA(%ebx), %eax  # Usa constante simbólica
+    pushl %eax
+    pushl $str_float_input          # "%f" - formato correto
+    call  scanf                     # Lê valor como float
+    addl  $8, %esp
+    call  clear_input_buffer
+\end{verbatim}
+
+\section{Relatórios e Consultas}
 \begin{itemize}
-    \item \texttt{total\_compra}: Percorre a lista somando \texttt{quantidade * valor\_compra} para cada produto.
-    \item \texttt{total\_venda}: Percorre a lista somando \texttt{quantidade * valor\_venda} para cada produto.
-    \item \texttt{lucro\_total}: Calcula \texttt{total\_venda - total\_compra}.
-    \item \texttt{capital\_perdido}:
-        \begin{enumerate}
-            \item Pede a data atual ao usuário.
-            \item Para cada produto, compara a data de validade com a data atual usando \texttt{compare\_dates}.
-            \item Se a validade for anterior à data atual, soma \texttt{quantidade * valor\_compra} ao total perdido.
-        \end{enumerate}
-    \item Os resultados são impressos em formato de moeda (reais.centavos).
+    \item \textbf{Relatório texto}: Agora usa \texttt{fprintf} com \texttt{\%.2f}
+    \item \textbf{Funções financeiras}: Todas migradas para FPU
+    \item \textbf{Capital perdido}: Corrigido para usar float em vez de centavos
+    \item \textbf{Ordenação}: Sem impacto (ordena por campos não monetários)
+\end{itemize}
+\section{Arquitetura Híbrida: Syscalls + Biblioteca}
+
+O sistema adota uma abordagem híbrida otimizada:
+
+\begin{itemize}
+    \item \textbf{Arquivos binários}: Syscalls (maior controle e eficiência).
+    \item \textbf{Formatação de texto}: Funções de biblioteca (simplificação).
+    \item \textbf{Entrada/saída console}: Funções de biblioteca (compatibilidade).
 \end{itemize}
 
-\textbf{Registradores nas funções de soma:}
+\section{Tratamento de Erros}
+
+\subsection{Verificações Implementadas}
 \begin{itemize}
-    \item \textbf{EBX}: ponteiro para o nó atual.
-    \item \textbf{ESI}: acumulador do total.
+    \item \textbf{Syscalls}: Verificação de retorno negativo indica erro
+    \item \textbf{malloc}: Teste de ponteiro nulo antes de uso
+    \item \textbf{FPU}: Stack da FPU gerenciada corretamente para evitar overflow
 \end{itemize}
 
-\section{Persistência em Disco}
-\subsection{Gravação (\texttt{save\_list})}
-\begin{enumerate}
-  \item Abre \texttt{produtos.bin} em modo \texttt{wb}.
-  \item Para cada nó: copia \texttt{dados\_size} bytes (offset 4) para um buffer via \texttt{memcpy}, chama \texttt{fwrite}.
-  \item Fecha arquivo (\texttt{fclose}).
-\end{enumerate}
-
-\subsection{Carregamento (\texttt{load\_list})}
-\begin{enumerate}
-  \item Abre \texttt{produtos.bin} em modo \texttt{rb}.
-  \item Enquanto \texttt{fread} retornar \texttt{dados\_size}: aloca nó (\texttt{malloc}), copia buffer para \texttt{novo+4}, chama \texttt{insert\_sorted}.
-  \item Fecha arquivo.
-\end{enumerate}
-
-\section{Geração de Relatórios}
-Função: \texttt{generate\_report}
-
-Gera um relatório em arquivo texto (\texttt{relatorio.txt}) com todos os produtos. O usuário pode escolher a ordenação: por nome (padrão), por quantidade ou por data de validade (mais antiga primeiro).
-
-\textbf{Fluxo:}
-\begin{enumerate}
-    \item Abre o arquivo para escrita.
-    \item Pergunta ao usuário o critério de ordenação.
-    \item Dependendo da escolha:
-        \begin{itemize}
-            \item \textbf{Ordenação por nome}: percorre a lista normalmente (já está ordenada por nome).
-            \item \textbf{Ordenação por quantidade ou data}: 
-                \begin{enumerate}
-                    \item Conta o número de nós.
-                    \item Aloca um array de ponteiros para nós.
-                    \item Preenche o array com os ponteiros dos nós.
-                    \item Ordena o array (usando \texttt{sort\_by\_quantity} ou \texttt{sort\_by\_date}).
-                    \item Percorre o array ordenado, escrevendo cada produto no arquivo.
-                    \item Libera o array.
-                \end{enumerate}
-        \end{itemize}
-    \item Para cada produto, escreve todos os campos no arquivo usando \texttt{fprintf}.
-    \item Fecha o arquivo.
-\end{enumerate}
-
-\textbf{Ordenação:}
+\subsection{Limitações Conhecidas}
 \begin{itemize}
-    \item \texttt{sort\_by\_quantity}: Usa bubble sort no array de ponteiros, comparando o campo \texttt{quantidade}.
-    \item \texttt{sort\_by\_date}: Usa bubble sort comparando as datas. A função de comparação \texttt{compare\_nodes\_by\_date} extrai dia, mês e ano de cada nó e compara (ano, depois mês, depois dia).
-\end{itemize}
-\textbf{Registradores nas funções de ordenação:}
-\begin{itemize}
-    \item \textbf{ESI}: endereço do array.
-    \item \textbf{ECX}: número de elementos.
-    \item \textbf{EDI}, \textbf{EBX}: índices para loops.
-    \item \textbf{EAX}, \textbf{ECX}: ponteiros para nós durante a comparação.
+    \item \textbf{Validação de entrada}: Não há verificação de ranges para valores float
+    \item \textbf{Overflow FPU}: Operações com valores muito grandes podem causar exceções
+    \item \textbf{Precisão}: Float de 32 bits tem limitações para valores monetários muito grandes
+    \item \textbf{Portabilidade}: Syscalls são específicos do Linux 32-bit
 \end{itemize}
 
-\section{Limitações e Pontos de Melhoria}
-Embora funcional, o código ainda apresenta algumas fragilidades:
-\begin{itemize}
-  \item \textbf{Validação de entrada ausente:} todas as chamadas a \texttt{scanf} ou \texttt{read\_int} assumem que o usuário fornecerá dados válidos. É possível, por exemplo, ler dia, mês ou ano negativos, ou valores fora de faixa.
-  \item \textbf{Sem tratamento de erro em tempo de execução:} não há verificação do retorno de \texttt{fread}, \texttt{fwrite} ou \texttt{malloc} além do teste simples de ponteiro nulo. Em caso de falha parcial de I/O, o relatório ou a lista podem ficar corrompidos.
-  \item \textbf{Possíveis vazamentos de memória:} em \texttt{generate\_report}, se a alocação de \texttt{node\_array} falhar, a função retorna sem liberar memória prévia. Similarmente, em rotinas CRUD, \texttt{malloc} bem-sucedido que não é seguido de \texttt{insert\_sorted} em caso de erro não é sempre liberado.
-  \item \textbf{Limite fixo de buffers:} funções como \texttt{read\_string\_with\_prompt} usam \\ \texttt{fgets(buffer,50)} sem checar se o usuário excedeu 49 caracteres, o que pode resultar em truncamento silencioso.
-  \item \textbf{Overflow aritmético:} ao multiplicar quantidade por valor em centavos, não há verificação de estouro de 32 bits em \texttt{imull}, podendo levar a resultados incorretos em consultas financeiras.
-\end{itemize}
+\section{Conclusão}
+As principais modificações incluíram a conversão dos campos monetários de inteiros (centavos) para float e a substituição de funções de biblioteca por syscalls do Linux para operações de E/S em arquivos binários. Todas as funções financeiras foram reescritas para utilizar a Floating Point Unit (FPU) do processador, incluindo \texttt{total\_compra}, \texttt{total\_venda}, \texttt{lucro\_total} e \texttt{capital\_perdido}. A função \texttt{update\_product\_interactive} foi corrigida para aceitar valores float na atualização de preços, e a geração de relatórios foi adaptada para formatar corretamente os valores monetários usando \texttt{fprintf} com especificador \texttt{\%.2f}.
 
 \end{document}
